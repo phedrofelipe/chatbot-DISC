@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Fundo -->
+  <rect width="64" height="64" rx="14" fill="#020617"/>
+
+  <!-- Quadrantes -->
+  <rect x="6" y="6" width="24" height="24" rx="5" fill="#ef4444"/>
+  <rect x="34" y="6" width="24" height="24" rx="5" fill="#f59e0b"/>
+  <rect x="6" y="34" width="24" height="24" rx="5" fill="#2563eb"/>
+  <rect x="34" y="34" width="24" height="24" rx="5" fill="#16a34a"/>
+</svg>

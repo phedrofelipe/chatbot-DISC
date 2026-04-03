@@ -1,0 +1,612 @@
+import { useState, useMemo, useEffect } from 'react';
+import axios from 'axios';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Sun, Moon } from 'lucide-react';
+import { questions, DISC_NAMES, DISC_FULL } from './data/questions';
+import './App.css';
+
+type Screen = 'intro' | 'auth' | 'quiz' | 'loading' | 'result' | 'dashboard';
+
+interface DashboardData {
+  totalUsers: number;
+  sectorDistribution: Record<string, number>;
+  analysis: {
+    culture_summary: string;
+    leadership_focus: string[];
+    strategic_advice: string;
+    potential_risks: string;
+    growth_opportunities: string;
+  };
+}
+
+interface Analysis {
+  headline: string;
+  description: string;
+  strengths: string[];
+  challenges: string[];
+  management_tips: string[];
+  ideal_roles: string;
+  combo_insight: string;
+}
+
+const SECTORS = ['TI', 'RH', 'Processos', 'Administrativo', 'Operações'];
+const REGIONS = ['Norte', 'Nordeste', 'Centro-Oeste', 'Sudeste', 'Sul'];
+
+function App() {
+  const [screen, setScreen] = useState<Screen>('intro');
+  const [currentQ, setCurrentQ] = useState(0);
+  const [scores, setScores] = useState({ D: 0, I: 0, S: 0, C: 0 });
+  const [answers, setAnswers] = useState<{ q: string; a: string; type: string }[]>([]);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [userData, setUserData] = useState({
+    nomeCompleto: '',
+    email: '',
+    setor: '',
+    idade: '',
+    regiao: '',
+  });
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
+  });
+
+  // Verifica se o usuário já existe ao carregar a página
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('userEmail');
+    if (savedEmail) {
+      checkExistingUser(savedEmail);
+    }
+  }, []);
+
+  const checkExistingUser = async (email: string) => {
+    try {
+      const res = await axios.get(`http://localhost:3000/users/email/${email}`);
+      if (res.data) {
+        setUserData({
+          nomeCompleto: res.data.nomeCompleto,
+          email: res.data.email,
+          setor: res.data.setor,
+          idade: res.data.idade.toString(),
+          regiao: res.data.regiao,
+        });
+        
+        if (res.data.analiseResult) {
+          setAnalysis(JSON.parse(res.data.analiseResult));
+          setScreen('result');
+        } else {
+          setScreen('quiz');
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao buscar usuário:', error);
+    }
+  };
+
+  // Aplica o tema globalmente no elemento raiz
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  // Embaralha as opções toda vez que a pergunta muda
+  const shuffledOptions = useMemo(() => {
+    if (screen !== 'quiz') return [];
+    return [...questions[currentQ].opts].sort(() => Math.random() - 0.5);
+  }, [currentQ, screen]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
+
+  const startIntro = () => {
+    setScreen('auth');
+  };
+
+  const startQuiz = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userData.nomeCompleto || !userData.email || !userData.setor || !userData.idade || !userData.regiao) {
+      alert('Por favor, preencha todos os campos obrigatórios.');
+      return;
+    }
+
+    try {
+      // Verifica se o e-mail já existe
+      const res = await axios.get(`http://localhost:3000/users/email/${userData.email}`);
+      
+      if (res.data) {
+        if (res.data.analiseResult) {
+          setAnalysis(JSON.parse(res.data.analiseResult));
+          setUserData({
+            nomeCompleto: res.data.nomeCompleto,
+            email: res.data.email,
+            setor: res.data.setor,
+            idade: res.data.idade.toString(),
+            regiao: res.data.regiao,
+          });
+          localStorage.setItem('userEmail', res.data.email);
+          setScreen('result');
+          return;
+        }
+        // Se existe mas não tem análise, continua para o quiz
+        localStorage.setItem('userEmail', res.data.email);
+      } else {
+        // Se não existe, cria o usuário agora
+        const userRes = await axios.post('http://localhost:3000/users', {
+          ...userData,
+          idade: parseInt(userData.idade),
+        });
+        localStorage.setItem('userEmail', userRes.data.email);
+      }
+
+      setScreen('quiz');
+      setCurrentQ(0);
+      setScores({ D: 0, I: 0, S: 0, C: 0 });
+      setAnswers([]);
+    } catch (error) {
+      console.error('Erro na autenticação:', error);
+      alert('Erro ao processar dados do usuário.');
+    }
+  };
+
+  const selectOption = (type: 'D' | 'I' | 'S' | 'C', text: string) => {
+    const newScores = { ...scores, [type]: scores[type] + 1 };
+    const newAnswers = [...answers, { q: questions[currentQ].text, a: text, type }];
+    
+    setScores(newScores);
+    setAnswers(newAnswers);
+
+    if (currentQ < questions.length - 1) {
+      setCurrentQ((prev) => prev + 1);
+    } else {
+      generateResult(newScores, newAnswers);
+    }
+  };
+
+  const generateResult = async (finalScores: typeof scores, finalAnswers: typeof answers) => {
+    setScreen('loading');
+    try {
+      // 1. Buscar o ID do usuário pelo e-mail
+      const userRes = await axios.get(`http://localhost:3000/users/email/${userData.email}`);
+      const userId = userRes.data.id;
+
+      // 2. Gerar análise via IA
+      const response = await axios.post('http://localhost:3000/analysis', {
+        scores: finalScores,
+        answers: finalAnswers,
+      });
+      const analysisResult = response.data;
+
+      // 3. Salvar resultado da análise no usuário
+      await axios.patch(`http://localhost:3000/users/${userId}/analysis`, {
+        result: analysisResult,
+      });
+
+      setAnalysis(analysisResult);
+      setScreen('result');
+    } catch (error) {
+      console.error('Erro no processamento:', error);
+      setScreen('intro');
+      alert('Erro ao processar sua análise. Verifique se o backend está rodando e configurado corretamente.');
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('userEmail');
+    setUserData({
+      nomeCompleto: '',
+      email: '',
+      setor: '',
+      idade: '',
+      regiao: '',
+    });
+    setAnalysis(null);
+    setScreen('intro');
+  };
+
+  const loadDashboard = async () => {
+    setScreen('loading');
+    try {
+      const res = await axios.get('http://localhost:3000/analysis/dashboard');
+      setDashboardData(res.data);
+      setScreen('dashboard');
+    } catch (error) {
+      console.error('Erro ao carregar dashboard:', error);
+      alert('Erro ao carregar os dados do dashboard.');
+      setScreen('intro');
+    }
+  };
+
+  const renderIntro = () => (
+    <motion.div
+      className="intro"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+    >
+      <div className="badge">🧠 Baseado em William Moulton Marston · 1928</div>
+      <h1>
+        Descubra seu
+        <br />
+        <em>perfil comportamental</em>
+      </h1>
+      <p>
+        10 perguntas de múltipla escolha para identificar seu tipo DISC dominante e secundário, com
+        análise de pontos fortes, desafios e dicas de gestão.
+      </p>
+      <div className="disc-preview">
+        <span className="disc-pill D">D · Executor</span>
+        <span className="disc-pill I">I · Comunicador</span>
+        <span className="disc-pill S">S · Planejador</span>
+        <span className="disc-pill C">C · Analista</span>
+      </div>
+      <button className="btn-start" onClick={startIntro}>
+        Começar agora →
+      </button>
+    </motion.div>
+  );
+
+  const renderAuth = () => (
+    <motion.div
+      className="auth"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+    >
+      <div className="auth-card">
+        <h2>Identificação</h2>
+        <p>Preencha os dados abaixo para iniciar sua avaliação personalizada.</p>
+        <form onSubmit={startQuiz}>
+          <div className="form-group">
+            <label>Nome Completo</label>
+            <input
+              type="text"
+              required
+              placeholder="Ex: João Silva"
+              value={userData.nomeCompleto}
+              onChange={(e) => setUserData({ ...userData, nomeCompleto: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label>E-mail</label>
+            <input
+              type="email"
+              required
+              placeholder="seu@email.com"
+              value={userData.email}
+              onChange={(e) => setUserData({ ...userData, email: e.target.value })}
+            />
+          </div>
+          <div className="form-group-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div className="form-group">
+              <label>Idade</label>
+              <input
+                type="number"
+                required
+                min="14"
+                max="100"
+                placeholder="Idade"
+                value={userData.idade}
+                onChange={(e) => setUserData({ ...userData, idade: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label>Região</label>
+              <select
+                required
+                value={userData.regiao}
+                onChange={(e) => setUserData({ ...userData, regiao: e.target.value })}
+              >
+                <option value="">Selecione...</option>
+                {REGIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Setor de Atuação</label>
+            <select
+              required
+              value={userData.setor}
+              onChange={(e) => setUserData({ ...userData, setor: e.target.value })}
+            >
+              <option value="">Selecione seu setor...</option>
+              {SECTORS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button type="submit" className="btn-auth">
+            Iniciar Quiz →
+          </button>
+        </form>
+      </div>
+    </motion.div>
+  );
+
+  const renderQuiz = () => {
+    const q = questions[currentQ];
+    const pct = Math.round((currentQ / questions.length) * 100);
+
+    return (
+      <motion.div
+        className="quiz"
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -20 }}
+        key={currentQ}
+      >
+        <div className="quiz-header">
+          <div className="quiz-progress-info">
+            <span>
+              Pergunta {currentQ + 1} de {questions.length}
+            </span>
+            <span>{pct}%</span>
+          </div>
+          <div className="progress-bar">
+            <div className="progress-fill" style={{ width: `${pct}%` }}></div>
+          </div>
+        </div>
+
+        <div className="question-card">
+          <div className="question-num">Pergunta {currentQ + 1}</div>
+          <div className="question-text">{q.text}</div>
+          <div className="options-grid">
+            {shuffledOptions.map((opt, i) => (
+              <button
+                key={i}
+                className="option-btn"
+                onClick={() => selectOption(opt.type as any, opt.text)}
+              >
+                <span className="opt-label">{String.fromCharCode(65 + i)}</span>
+                {opt.text}
+              </button>
+            ))}
+          </div>
+        </div>
+      </motion.div>
+    );
+  };
+
+  const renderLoading = () => (
+    <div className="loading">
+      <div className="loading-orb"></div>
+      <h3>Analisando seu perfil…</h3>
+      <p>
+        A IA está processando suas respostas e gerando um relatório personalizado com base no modelo
+        DISC de Marston.
+      </p>
+    </div>
+  );
+
+  const renderResult = () => {
+    if (!analysis) return null;
+    const total = Object.values(scores).reduce((a, b) => a + b, 0);
+    const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+    const [primary, secondary] = sorted;
+    const colors = { D: 'var(--D)', I: 'var(--I)', S: 'var(--S)', C: 'var(--C)' };
+    const icons = { D: '⚡', I: '✨', S: '🌿', C: '🔍' };
+    const bgIcons = { D: 'var(--D-bg)', I: 'var(--I-bg)', S: 'var(--S-bg)', C: 'var(--C-bg)' };
+
+    return (
+      <motion.div className="result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <div className="result-header">
+          <div className="result-badge">Análise DISC Completa para {userData.nomeCompleto}</div>
+          <div
+            className="result-title"
+            style={{ color: colors[primary[0] as keyof typeof colors] }}
+          >
+            {analysis.headline}
+          </div>
+          <div className="result-subtitle">
+            Perfil {primary[0]}
+            {secondary[0]} · {DISC_FULL[primary[0] as keyof typeof DISC_FULL]} +{' '}
+            {DISC_FULL[secondary[0] as keyof typeof DISC_FULL]}
+          </div>
+        </div>
+
+        <div className="score-grid">
+          {sorted.map(([type, score], idx) => {
+            const pct = Math.round((score / total) * 100);
+            return (
+              <div key={type} className={`score-card ${type} ${idx === 0 ? 'primary' : ''}`}>
+                {idx === 0 && <span className="primary-crown">1º</span>}
+                {idx === 1 && (
+                  <span className="primary-crown" style={{ background: '#888' }}>
+                    2º
+                  </span>
+                )}
+                <div className="type-letter">{type}</div>
+                <div className="type-name">{DISC_NAMES[type as keyof typeof DISC_NAMES]}</div>
+                <div className="score-bar-wrap">
+                  <div className="score-bar-fill" style={{ width: `${pct}%` }}></div>
+                </div>
+                <div className="score-pct">{pct}%</div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="profile-section">
+          <h3>
+            <span
+              className="icon"
+              style={{ background: bgIcons[primary[0] as keyof typeof bgIcons], fontSize: '16px' }}
+            >
+              {icons[primary[0] as keyof typeof icons]}
+            </span>
+            Sobre este perfil
+          </h3>
+          <p>{analysis.description}</p>
+        </div>
+
+        <div className="profile-section">
+          <h3>
+            <span className="icon strengths-icon">💪</span> Pontos fortes
+          </h3>
+          <ul>
+            {analysis.strengths.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="profile-section">
+          <h3>
+            <span className="icon weaknesses-icon">⚠️</span> Pontos de atenção
+          </h3>
+          <ul>
+            {analysis.challenges.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="profile-section">
+          <h3>
+            <span className="icon combo-icon">🔗</span> Combinação {primary[0]}+{secondary[0]}
+          </h3>
+          <p>{analysis.combo_insight}</p>
+        </div>
+
+        <div className="profile-section">
+          <h3>
+            <span className="icon tips-icon">🎯</span> Dicas para o gestor
+          </h3>
+          <ul>
+            {analysis.management_tips.map((t, i) => (
+              <li key={i}>{t}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="profile-section">
+          <h3>
+            <span className="icon" style={{ background: 'rgba(168, 198, 240, 0.1)' }}>
+              🏢
+            </span>{' '}
+            Funções ideais
+          </h3>
+          <p>{analysis.ideal_roles}</p>
+        </div>
+
+        <button className="btn-restart" onClick={() => setScreen('intro')}>
+          Refazer o teste
+        </button>
+      </motion.div>
+    );
+  };
+
+  const renderDashboard = () => {
+    if (!dashboardData) return null;
+
+    return (
+      <motion.div className="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <div className="result-header">
+          <div className="result-badge">Painel Estratégico de Liderança</div>
+          <div className="result-title" style={{ color: 'var(--text)' }}>
+            Visão Geral da Cultura
+          </div>
+          <div className="result-subtitle">
+            Análise baseada em {dashboardData.totalUsers} colaboradores mapeados
+          </div>
+        </div>
+
+        <div className="stats-grid">
+          <div className="stat-card">
+            <div className="stat-value">{dashboardData.totalUsers}</div>
+            <div className="stat-label">Total de Colaboradores</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-value">{Object.keys(dashboardData.sectorDistribution).length}</div>
+            <div className="stat-label">Setores Mapeados</div>
+          </div>
+        </div>
+
+        <div className="profile-section main-analysis">
+          <h3>
+            <span className="icon" style={{ background: 'rgba(168, 198, 240, 0.1)' }}>
+              📊
+            </span>
+            Resumo da Cultura
+          </h3>
+          <p>{dashboardData.analysis.culture_summary}</p>
+        </div>
+
+        <div className="dashboard-grid">
+          <div className="profile-section">
+            <h3>
+              <span className="icon tips-icon">🎯</span> Foco da Liderança
+            </h3>
+            <ul>
+              {dashboardData.analysis.leadership_focus.map((f, i) => (
+                <li key={i}>{f}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="profile-section">
+            <h3>
+              <span className="icon strengths-icon">💡</span> Conselhos Estratégicos
+            </h3>
+            <p>{dashboardData.analysis.strategic_advice}</p>
+          </div>
+
+          <div className="profile-section">
+            <h3>
+              <span className="icon weaknesses-icon">⚠️</span> Riscos Potenciais
+            </h3>
+            <p>{dashboardData.analysis.potential_risks}</p>
+          </div>
+
+          <div className="profile-section">
+            <h3>
+              <span className="icon combo-icon">🚀</span> Oportunidades de Crescimento
+            </h3>
+            <p>{dashboardData.analysis.growth_opportunities}</p>
+          </div>
+        </div>
+
+        <button className="btn-restart" onClick={() => setScreen('intro')}>
+          Voltar para Início
+        </button>
+      </motion.div>
+    );
+  };
+
+  return (
+    <div className="container" data-theme={theme}>
+      <div className="top-bar">
+        {screen === 'intro' && (
+          <button className="btn-dashboard-entry" onClick={loadDashboard}>
+            📊 Dashboard
+          </button>
+        )}
+        {userData.nomeCompleto && (
+          <div className="user-info">
+            Olá, <strong>{userData.nomeCompleto}</strong>
+            <button className="btn-logout" onClick={logout}>Sair</button>
+          </div>
+        )}
+        <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
+          {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+        </button>
+      </div>
+
+      <AnimatePresence mode="wait">
+        {screen === 'intro' && renderIntro()}
+        {screen === 'auth' && renderAuth()}
+        {screen === 'quiz' && renderQuiz()}
+        {screen === 'loading' && renderLoading()}
+        {screen === 'result' && renderResult()}
+        {screen === 'dashboard' && renderDashboard()}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export default App;
