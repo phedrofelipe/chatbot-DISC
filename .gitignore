@@ -43,3 +43,13 @@ Thumbs.db
 
 # Project Specific
 GEMINI.md
+
+# IDE
+.vscode/
+.idea/
+
+# Cache
+.cache/
+
+# Tests
+coverage/
