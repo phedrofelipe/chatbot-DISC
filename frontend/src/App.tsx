@@ -2,15 +2,26 @@ import { useState, useMemo, useEffect } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sun, Moon } from 'lucide-react';
+import { 
+  PieChart, Pie, Cell, ResponsiveContainer, 
+  BarChart, Bar, XAxis, YAxis, Tooltip, Legend 
+} from 'recharts';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { questions, DISC_NAMES, DISC_FULL } from './data/questions';
 import './App.css';
 
-type Screen = 'intro' | 'auth' | 'quiz' | 'loading' | 'result' | 'dashboard';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
+type Screen = 'intro' | 'auth' | 'quiz' | 'loading' | 'result' | 'dashboard' | 'admin-login';
 interface DashboardData {
   totalUsers: number;
   sectorDistribution: Record<string, number>;
+  discDistribution: { name: string; value: number }[];
+  sectorData: { name: string; value: number }[];
   analysis: {
+...
+
     culture_summary: string;
     leadership_focus: string[];
     strategic_advice: string;
@@ -31,9 +42,32 @@ interface Analysis {
 
 const SECTORS = ['TI', 'RH', 'Processos', 'Administrativo', 'Operações'];
 const REGIONS = ['Norte', 'Nordeste', 'Centro-Oeste', 'Sudeste', 'Sul'];
-
 function App() {
   const [screen, setScreen] = useState<Screen>('intro');
+  const [loadingMessage, setLoadingMessage] = useState('Analisando seu perfil…');
+  const [adminToken, setAdminToken] = useState<string | null>(localStorage.getItem('adminToken'));
+...
+  const loadingMessages = [
+    'Sintonizando com a teoria de Marston...',
+    'Processando vetores comportamentais...',
+    'A IA está gerando seu relatório personalizado...',
+    'Quase lá! Refinando os insights de gestão...',
+  ];
+
+  useEffect(() => {
+    let interval: any;
+    if (screen === 'loading') {
+      let idx = 0;
+      setLoadingMessage(loadingMessages[0]);
+      interval = setInterval(() => {
+        idx = (idx + 1) % loadingMessages.length;
+        setLoadingMessage(loadingMessages[idx]);
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [screen]);
+
+  const [adminCreds, setAdminCreds] = useState({ email: '', pass: '' });
   const [currentQ, setCurrentQ] = useState(0);
   const [scores, setScores] = useState({ D: 0, I: 0, S: 0, C: 0 });
   const [answers, setAnswers] = useState<{ q: string; a: string; type: string }[]>([]);
@@ -60,7 +94,7 @@ function App() {
 
   const checkExistingUser = async (email: string) => {
     try {
-      const res = await axios.get(`http://localhost:3000/users/email/${email}`);
+      const res = await axios.get(`${API_URL}/users/email/${email}`);
       if (res.data) {
         setUserData({
           nomeCompleto: res.data.nomeCompleto,
@@ -111,7 +145,7 @@ function App() {
 
     try {
       // Verifica se o e-mail já existe
-      const res = await axios.get(`http://localhost:3000/users/email/${userData.email}`);
+      const res = await axios.get(`${API_URL}/users/email/${userData.email}`);
       
       if (res.data) {
         if (res.data.analiseResult) {
@@ -131,7 +165,7 @@ function App() {
         localStorage.setItem('userEmail', res.data.email);
       } else {
         // Se não existe, cria o usuário agora
-        const userRes = await axios.post('http://localhost:3000/users', {
+        const userRes = await axios.post(`${API_URL}/users`, {
           ...userData,
           idade: parseInt(userData.idade),
         });
@@ -165,21 +199,13 @@ function App() {
   const generateResult = async (finalScores: typeof scores, finalAnswers: typeof answers) => {
     setScreen('loading');
     try {
-      // 1. Buscar o ID do usuário pelo e-mail
-      const userRes = await axios.get(`http://localhost:3000/users/email/${userData.email}`);
-      const userId = userRes.data.id;
-
-      // 2. Gerar análise via IA
-      const response = await axios.post('http://localhost:3000/analysis', {
+      // Gerar análise via IA - Agora o backend valida o usuário e salva o resultado (Item 1 & 6)
+      const response = await axios.post(`${API_URL}/analysis`, {
+        email: userData.email,
         scores: finalScores,
         answers: finalAnswers,
       });
       const analysisResult = response.data;
-
-      // 3. Salvar resultado da análise no usuário
-      await axios.patch(`http://localhost:3000/users/${userId}/analysis`, {
-        result: analysisResult,
-      });
 
       setAnalysis(analysisResult);
       setScreen('result');
@@ -203,18 +229,111 @@ function App() {
     setScreen('intro');
   };
 
-  const loadDashboard = async () => {
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post(`${API_URL}/auth/login`, adminCreds);
+      const token = res.data.access_token;
+      setAdminToken(token);
+      localStorage.setItem('adminToken', token);
+      loadDashboard(token);
+    } catch (error) {
+      alert('Credenciais administrativas inválidas');
+    }
+  };
+
+  const loadDashboard = async (token?: string) => {
+    const activeToken = token || adminToken;
+    if (!activeToken) {
+      setScreen('admin-login');
+      return;
+    }
+
     setScreen('loading');
     try {
-      const res = await axios.get('http://localhost:3000/analysis/dashboard');
+      const res = await axios.get(`${API_URL}/analysis/dashboard`, {
+        headers: { Authorization: `Bearer ${activeToken}` },
+      });
       setDashboardData(res.data);
       setScreen('dashboard');
     } catch (error) {
       console.error('Erro ao carregar dashboard:', error);
-      alert('Erro ao carregar os dados do dashboard.');
-      setScreen('intro');
+      // Se o token expirou, limpa e pede login
+      setAdminToken(null);
+      localStorage.removeItem('adminToken');
+      setScreen('admin-login');
     }
   };
+
+  const downloadPDF = async (elementId: string, fileName: string) => {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    setScreen('loading');
+    setLoadingMessage('Preparando seu PDF...');
+
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: theme === 'dark' ? '#0e0f11' : '#f7f5f0',
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${fileName}.pdf`);
+      setScreen(elementId === 'capture-result' ? 'result' : 'dashboard');
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      alert('Erro ao gerar o PDF.');
+      setScreen(elementId === 'capture-result' ? 'result' : 'dashboard');
+    }
+  };
+
+  const renderAdminLogin = () => (
+    <motion.div
+      className="auth"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+    >
+      <div className="auth-card">
+        <h2>Acesso Administrativo</h2>
+        <p>Apenas para gestores autorizados.</p>
+        <form onSubmit={handleAdminLogin}>
+          <div className="form-group">
+            <label>Email Admin</label>
+            <input
+              type="email"
+              required
+              value={adminCreds.email}
+              onChange={(e) => setAdminCreds({ ...adminCreds, email: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label>Senha</label>
+            <input
+              type="password"
+              required
+              value={adminCreds.pass}
+              onChange={(e) => setAdminCreds({ ...adminCreds, pass: e.target.value })}
+            />
+          </div>
+          <button type="submit" className="btn-auth">
+            Acessar Dashboard →
+          </button>
+          <button type="button" className="btn-restart" style={{ marginTop: '10px' }} onClick={() => setScreen('intro')}>
+            Voltar
+          </button>
+        </form>
+      </div>
+    </motion.div>
+  );
 
   const renderIntro = () => (
     <motion.div
@@ -375,7 +494,7 @@ function App() {
   const renderLoading = () => (
     <div className="loading">
       <div className="loading-orb"></div>
-      <h3>Analisando seu perfil…</h3>
+      <h3>{loadingMessage}</h3>
       <p>
         A IA está processando suas respostas e gerando um relatório personalizado com base no modelo
         DISC de Marston.
@@ -393,7 +512,7 @@ function App() {
     const bgIcons = { D: 'var(--D-bg)', I: 'var(--I-bg)', S: 'var(--S-bg)', C: 'var(--C-bg)' };
 
     return (
-      <motion.div className="result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <motion.div className="result" id="capture-result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         <div className="result-header">
           <div className="result-badge">Análise DISC Completa para {userData.nomeCompleto}</div>
           <div
@@ -494,15 +613,22 @@ function App() {
           <p>{analysis.ideal_roles}</p>
         </div>
 
-        <button className="btn-restart" onClick={() => setScreen('intro')}>
-          Refazer o teste
-        </button>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <button className="btn-restart" style={{ flex: 1 }} onClick={() => downloadPDF('capture-result', `DISC_${userData.nomeCompleto}`)}>
+            📥 Baixar Relatório (PDF)
+          </button>
+          <button className="btn-restart" style={{ flex: 1, background: 'var(--surface2)', color: 'var(--text)' }} onClick={() => setScreen('intro')}>
+            Sair
+          </button>
+        </div>
       </motion.div>
     );
   };
 
   const renderDashboard = () => {
     if (!dashboardData) return null;
+
+    const DISC_COLORS = ['#c0392b', '#d4860b', '#27794a', '#1e5fa8'];
 
     return (
       <motion.div className="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -524,6 +650,44 @@ function App() {
           <div className="stat-card">
             <div className="stat-value">{Object.keys(dashboardData.sectorDistribution).length}</div>
             <div className="stat-label">Setores Mapeados</div>
+          </div>
+        </div>
+
+        <div className="charts-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+          <div className="profile-section" style={{ height: '350px' }}>
+            <h3>Distribuição DISC</h3>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={dashboardData.discDistribution}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                  label
+                >
+                  {dashboardData.discDistribution.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={DISC_COLORS[index % DISC_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="profile-section" style={{ height: '350px' }}>
+            <h3>Colaboradores por Setor</h3>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dashboardData.sectorData}>
+                <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={12} />
+                <YAxis stroke="var(--text-muted)" fontSize={12} />
+                <Tooltip />
+                <Bar dataKey="value" fill="var(--text)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
@@ -604,6 +768,7 @@ function App() {
         {screen === 'loading' && renderLoading()}
         {screen === 'result' && renderResult()}
         {screen === 'dashboard' && renderDashboard()}
+        {screen === 'admin-login' && renderAdminLogin()}
       </AnimatePresence>
     </div>
   );

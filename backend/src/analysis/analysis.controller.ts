@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Get } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards } from '@nestjs/common';
 import { AnalysisService } from './analysis.service';
 import { UsersService } from '../users/users.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('analysis')
 export class AnalysisController {
@@ -10,10 +11,11 @@ export class AnalysisController {
   ) {}
 
   @Post()
-  async analyze(@Body() body: { scores: any; answers: any[] }) {
-    return this.analysisService.generateAnalysis(body.scores, body.answers);
+  async analyze(@Body() body: { email: string; scores: any; answers: any[] }) {
+    return this.analysisService.generateAnalysis(body.email, body.scores, body.answers);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('dashboard')
   async getDashboard() {
     const users = await this.usersService.findAll();

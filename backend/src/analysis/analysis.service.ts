@@ -1,13 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class AnalysisService {
   private readonly groqApiKey: string;
   private readonly groqUrl = 'https://api.groq.com/openai/v1/chat/completions';
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private usersService: UsersService,
+  ) {
     const key = this.configService.get<string>('GROQ_API_KEY');
     if (!key) {
       throw new Error('GROQ_API_KEY não configurada no .env');
@@ -19,21 +23,31 @@ export class AnalysisService {
     const totalUsers = users.length;
     if (totalUsers === 0) return { stats: {}, analysis: null };
 
-    // Contagem de perfis dominantes
     const profileCounts: Record<string, number> = { D: 0, I: 0, S: 0, C: 0 };
     const sectorDistribution: Record<string, number> = {};
 
     users.forEach((user) => {
+      // Tentar deduzir o perfil dominante do analiseResult
       if (user.analiseResult) {
         try {
-          // O analiseResult é salvo como string JSON
           const res = JSON.parse(user.analiseResult);
-          // O perfil dominante é o primeiro mencionado na descrição ou deduzido dos scores (aqui vamos simplificar pegando o perfil primário do headline se possível, ou melhor, passaríamos os scores salvos)
-          // Como salvamos apenas o resultado da análise, vamos pedir para a IA analisar a cultura baseada no volume de usuários.
+          // O perfil primário costuma estar no "subtitle" ou podemos inferir.
+          // Aqui, como salvamos o JSON da IA, vamos procurar a primeira letra DISC no headline ou descrição se possível,
+          // mas o ideal seria salvar os scores separadamente.
+          // Por agora, vamos apenas contar os setores.
         } catch (e) {}
       }
       sectorDistribution[user.setor] = (sectorDistribution[user.setor] || 0) + 1;
     });
+
+    const discDistribution = [
+      { name: 'D - Executor', value: users.filter(u => u.analiseResult?.includes('"headline":"') && (u.analiseResult.includes('Executor') || u.analiseResult.includes('Dominância'))).length },
+      { name: 'I - Comunicador', value: users.filter(u => u.analiseResult?.includes('"headline":"') && (u.analiseResult.includes('Comunicador') || u.analiseResult.includes('Influência'))).length },
+      { name: 'S - Planejador', value: users.filter(u => u.analiseResult?.includes('"headline":"') && (u.analiseResult.includes('Planejador') || u.analiseResult.includes('Estabilidade'))).length },
+      { name: 'C - Analista', value: users.filter(u => u.analiseResult?.includes('"headline":"') && (u.analiseResult.includes('Analista') || u.analiseResult.includes('Conformidade'))).length },
+    ];
+
+    const sectorData = Object.entries(sectorDistribution).map(([name, value]) => ({ name, value }));
 
     const prompt = `Você é um consultor sênior de Cultura Organizacional e Liderança.
 Dados da Empresa:
@@ -77,6 +91,8 @@ Gere um relatório em JSON com esta estrutura:
       return {
         totalUsers,
         sectorDistribution,
+        discDistribution,
+        sectorData,
         analysis: JSON.parse(response.data.choices[0].message.content),
       };
     } catch (error) {
@@ -85,7 +101,21 @@ Gere um relatório em JSON com esta estrutura:
     }
   }
 
-  async generateAnalysis(scores: any, answers: any[]) {
+  async generateAnalysis(email: string, scores: any, answers: any[]) {
+    // 1. Verificação no Backend para evitar re-teste (Item 6)
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new Error('Usuário não encontrado');
+    }
+
+    if (user.analiseResult) {
+      try {
+        return JSON.parse(user.analiseResult);
+      } catch (e) {
+        // Se falhar o parse, continua para gerar nova análise
+      }
+    }
+
     const scoreValues: number[] = Object.values(scores);
     const total: number = scoreValues.reduce(
       (a: number, b: number) => a + b,
@@ -154,7 +184,12 @@ Gere um relatório em JSON com exatamente esta estrutura (responda SOMENTE o JSO
         },
       );
 
-      return JSON.parse(response.data.choices[0].message.content);
+      const result = JSON.parse(response.data.choices[0].message.content);
+
+      // Salva o resultado automaticamente no banco de dados (Item 1 & 6)
+      await this.usersService.updateAnalysis(user.id, result);
+
+      return result;
     } catch (error: any) {
       console.error(
         'Erro na chamada ao Groq:',

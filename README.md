@@ -23,6 +23,20 @@ Uma ferramenta moderna de análise de perfil comportamental baseada no modelo DI
 
 ---
 
+## 📈 Roadmap de Melhorias Profissionais
+
+Para elevar o projeto ao nível de produção, as seguintes melhorias estão em desenvolvimento:
+
+1.  **Segurança Avançada:** Isolamento total de chaves de API no backend e auditoria de variáveis de ambiente.
+2.  **Gestão Autenticada:** Acesso ao Dashboard de Liderança protegido por autenticação JWT.
+3.  **Escalabilidade de Dados:** Migração planejada para PostgreSQL para suportar múltiplos acessos simultâneos.
+4.  **Experiência do Usuário (UX):** Tratamento de erros detalhado, estados de carregamento e feedback visual aprimorado.
+5.  **Integridade do Negócio:** Validação rigorosa no backend para garantir a unicidade dos testes por colaborador.
+6.  **Infraestrutura Moderna:** Containerização completa com Docker e Docker Compose para deploy simplificado.
+7.  **Visualização de Dados:** Gráficos interativos e exportação de relatórios em PDF.
+
+---
+
 ## 🛠️ Tecnologias Utilizadas
 
 ### Frontend
@@ -83,9 +97,18 @@ Uma ferramenta moderna de análise de perfil comportamental baseada no modelo DI
    ```
    *O frontend estará rodando em `http://localhost:5173`*
 
----
-
-## 📂 Estrutura do Projeto
+### 3. Execução com Docker (Recomendado para Produção)
+Para subir o ambiente completo (Frontend, Backend e PostgreSQL):
+1. Copie o `.env.example` para `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+2. Edite o arquivo `.env` com sua `GROQ_API_KEY` e senhas.
+3. Execute o Docker Compose:
+   ```bash
+   docker-compose up --build
+   ```
+   *O frontend estará disponível em `http://localhost`, o backend em `http://localhost:3000` e o banco PostgreSQL em `5432`.*
 
 ```text
 chatbot-perfil/
