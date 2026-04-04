@@ -23,46 +23,64 @@ export class AnalysisService {
     const totalUsers = users.length;
     if (totalUsers === 0) return { stats: {}, analysis: null };
 
-    const profileCounts: Record<string, number> = { D: 0, I: 0, S: 0, C: 0 };
     const sectorDistribution: Record<string, number> = {};
-
     users.forEach((user) => {
-      // Tentar deduzir o perfil dominante do analiseResult
-      if (user.analiseResult) {
-        try {
-          const res = JSON.parse(user.analiseResult);
-          // O perfil primário costuma estar no "subtitle" ou podemos inferir.
-          // Aqui, como salvamos o JSON da IA, vamos procurar a primeira letra DISC no headline ou descrição se possível,
-          // mas o ideal seria salvar os scores separadamente.
-          // Por agora, vamos apenas contar os setores.
-        } catch (e) {}
-      }
       sectorDistribution[user.setor] = (sectorDistribution[user.setor] || 0) + 1;
     });
 
+    const discCounts = {
+      D: users.filter((u) => u.primaryType === 'D').length,
+      I: users.filter((u) => u.primaryType === 'I').length,
+      S: users.filter((u) => u.primaryType === 'S').length,
+      C: users.filter((u) => u.primaryType === 'C').length,
+    };
+
     const discDistribution = [
-      { name: 'D - Executor', value: users.filter(u => u.analiseResult?.includes('"headline":"') && (u.analiseResult.includes('Executor') || u.analiseResult.includes('Dominância'))).length },
-      { name: 'I - Comunicador', value: users.filter(u => u.analiseResult?.includes('"headline":"') && (u.analiseResult.includes('Comunicador') || u.analiseResult.includes('Influência'))).length },
-      { name: 'S - Planejador', value: users.filter(u => u.analiseResult?.includes('"headline":"') && (u.analiseResult.includes('Planejador') || u.analiseResult.includes('Estabilidade'))).length },
-      { name: 'C - Analista', value: users.filter(u => u.analiseResult?.includes('"headline":"') && (u.analiseResult.includes('Analista') || u.analiseResult.includes('Conformidade'))).length },
+      { name: 'D - Executor', value: discCounts.D },
+      { name: 'I - Comunicador', value: discCounts.I },
+      { name: 'S - Planejador', value: discCounts.S },
+      { name: 'C - Analista', value: discCounts.C },
     ];
 
-    const sectorData = Object.entries(sectorDistribution).map(([name, value]) => ({ name, value }));
+    const dominantProfile = Object.entries(discCounts).sort(
+      (a, b) => b[1] - a[1],
+    )[0][0];
 
-    const prompt = `Você é um consultor sênior de Cultura Organizacional e Liderança.
-Dados da Empresa:
-- Total de Colaboradores Mapeados: ${totalUsers}
-- Distribuição por Setores: ${JSON.stringify(sectorDistribution)}
+    const sectorData = Object.entries(sectorDistribution).map(
+      ([name, value]) => ({ name, value }),
+    );
 
-Tarefa: Gere uma análise estratégica para a Liderança sobre o clima e a cultura organizacional baseada no modelo DISC. Como não temos os scores individuais de todos aqui, foque em como gerir uma equipe de ${totalUsers} pessoas distribuídas nestes setores.
+    const prompt = `
+## DADOS DA EQUIPE (${totalUsers} colaboradores mapeados)
 
-Gere um relatório em JSON com esta estrutura:
+Distribuição DISC:
+- D (Executor): ${discCounts.D} pessoas (${Math.round((discCounts.D / totalUsers) * 100)}%)
+- I (Comunicador): ${discCounts.I} pessoas (${Math.round((discCounts.I / totalUsers) * 100)}%)
+- S (Planejador): ${discCounts.S} pessoas (${Math.round((discCounts.S / totalUsers) * 100)}%)
+- C (Analista): ${discCounts.C} pessoas (${Math.round((discCounts.C / totalUsers) * 100)}%)
+
+Perfil dominante da equipe: ${dominantProfile}
+Distribuição por setor: ${JSON.stringify(sectorDistribution, null, 2)}
+
+## SUA TAREFA
+Você é um consultor sênior de cultura organizacional contratado por esta empresa.
+Com base nos dados acima, produza uma análise estratégica REAL e ESPECÍFICA.
+NÃO produza análises genéricas que servem para qualquer empresa.
+Cada insight deve ser diretamente derivável dos números acima.
+
+Regras:
+- "culture_summary": cite os percentuais reais na análise
+- "leadership_focus": 3 ações concretas baseadas no perfil dominante ${dominantProfile}
+- "potential_risks": identifique o gap mais perigoso entre os perfis (ex: poucos C = risco de qualidade)
+- "growth_opportunities": baseado no perfil MENOS representado na equipe
+
+## FORMATO DE SAÍDA (JSON)
 {
-  "culture_summary": "resumo de 2-3 frases sobre a força de trabalho atual",
-  "leadership_focus": ["ponto 1 de foco para líderes", "ponto 2", "ponto 3"],
-  "strategic_advice": "conselho de alto nível sobre como otimizar a performance desta equipe",
-  "potential_risks": "riscos culturais ou operacionais baseados na estrutura atual",
-  "growth_opportunities": "onde a empresa pode evoluir em termos de capital humano"
+  "culture_summary": "",
+  "leadership_focus": ["", "", ""],
+  "strategic_advice": "",
+  "potential_risks": "",
+  "growth_opportunities": ""
 }`;
 
     try {
@@ -73,11 +91,11 @@ Gere um relatório em JSON com esta estrutura:
           messages: [
             {
               role: 'system',
-              content: 'Você é um consultor estratégico de RH e Liderança.',
+              content: `Você é Dr. Marcus Viana, consultor sênior de cultura organizacional com especialização em times de alta performance e modelo DISC. Você escreve exclusivamente para CEOs, diretores e gestores de RH. Sua linguagem é executiva: objetiva, orientada a dados e sem rodeios. NUNCA produza análises genéricas que servem para qualquer empresa. NUNCA use linguagem acadêmica ou corporativa vaga como "alavancar sinergias". Cada frase deve ser diretamente derivável dos números fornecidos.`,
             },
             { role: 'user', content: prompt },
           ],
-          temperature: 0.3,
+          temperature: 0.1,
           response_format: { type: 'json_object' },
         },
         {
@@ -102,7 +120,6 @@ Gere um relatório em JSON com esta estrutura:
   }
 
   async generateAnalysis(email: string, scores: any, answers: any[]) {
-    // 1. Verificação no Backend para evitar re-teste (Item 6)
     const user = await this.usersService.findByEmail(email);
     if (!user) {
       throw new Error('Usuário não encontrado');
@@ -112,17 +129,18 @@ Gere um relatório em JSON com esta estrutura:
       try {
         return JSON.parse(user.analiseResult);
       } catch (e) {
-        // Se falhar o parse, continua para gerar nova análise
+        console.warn('Falha ao parsear analiseResult existente:', e);
       }
     }
 
-    const scoreValues: number[] = Object.values(scores);
-    const total: number = scoreValues.reduce(
-      (a: number, b: number) => a + b,
-      0,
-    );
+    const scoreMap = scores as Record<string, number>;
+    const total = Object.values(scoreMap).reduce((a, b) => a + b, 0);
 
-    const sorted = Object.entries(scores).sort((a: any, b: any) => b[1] - a[1]);
+    if (total === 0) {
+      throw new Error('Scores inválidos — total não pode ser zero');
+    }
+
+    const sorted = Object.entries(scoreMap).sort((a, b) => b[1] - a[1]);
     const [primary, secondary] = sorted;
 
     const DISC_NAMES: Record<string, string> = {
@@ -132,33 +150,36 @@ Gere um relatório em JSON com esta estrutura:
       C: 'Analista',
     };
 
-    const answersText = answers
-      .map((a, i) => `${i + 1}. ${a.q}\n   Resposta: "${a.a}" [${a.type}]`)
-      .join('\n');
+    const prompt = `
+## DADOS DO COLABORADOR
+- Perfil primário: ${primary[0]} — ${DISC_NAMES[primary[0]]} (${Math.round((scoreMap[primary[0]] / total) * 100)}%)
+- Perfil secundário: ${secondary[0]} — ${DISC_NAMES[secondary[0]]} (${Math.round((scoreMap[secondary[0]] / total) * 100)}%)
+- Scores completos: D=${scoreMap.D} | I=${scoreMap.I} | S=${scoreMap.S} | C=${scoreMap.C}
 
-    const prompt = `Você é um especialista em comportamento humano e análise DISC, baseado na teoria original de William Moulton Marston (1928).
+## RESPOSTAS DO QUESTIONÁRIO
+${answers.map((a, i) => `${i + 1}. ${a.q}\n   ➜ "${a.a}"`).join('\n')}
 
-O colaborador completou o questionário DISC e os resultados foram:
-- D (Dominância / Executor): ${scores.D} ponto(s) — ${Math.round((scores.D / total) * 100)}%
-- I (Influência / Comunicador): ${scores.I} ponto(s) — ${Math.round((scores.I / total) * 100)}%
-- S (Estabilidade / Planejador): ${scores.S} ponto(s) — ${Math.round((scores.S / total) * 100)}%
-- C (Conformidade / Analista): ${scores.C} ponto(s) — ${Math.round((scores.C / total) * 100)}%
+## SUA TAREFA
+Com base EXCLUSIVAMENTE nos dados acima, gere uma análise comportamental
+no formato JSON abaixo. Cada campo deve ser único, específico e não repetir
+informações dos outros campos.
 
-Perfil primário: ${primary[0]} (${DISC_NAMES[primary[0]]})
-Perfil secundário: ${secondary[0]} (${DISC_NAMES[secondary[0]]})
+Regras obrigatórias:
+- "headline": máximo 8 palavras, deve capturar a TENSÃO entre ${primary[0]} e ${secondary[0]}
+- "strengths": liste apenas pontos verificáveis pelas respostas acima, não genéricos
+- "challenges": seja honesto sobre os riscos reais deste perfil, sem suavizar
+- "management_tips": verbos de ação concretos (ex: "Dê prazos curtos", não "Considere dar...")
+- "combo_insight": explique especificamente como ${primary[0]} e ${secondary[0]} se TENSIONAM ou se COMPLEMENTAM
 
-Respostas detalhadas:
-${answersText}
-
-Gere um relatório em JSON com exatamente esta estrutura (responda SOMENTE o JSON, sem markdown):
+## FORMATO DE SAÍDA (JSON)
 {
-  "headline": "frase marcante de 5-8 palavras que captura a essência deste perfil",
-  "description": "parágrafo de 3-4 frases descrevendo o perfil combinado ${primary[0]}+${secondary[0]} no contexto profissional. Tom direto, humano e perspicaz.",
-  "strengths": ["ponto forte 1", "ponto forte 2", "ponto forte 3", "ponto forte 4", "ponto forte 5"],
-  "challenges": ["desafio 1", "desafio 2", "desafio 3", "desafio 4"],
-  "management_tips": ["dica 1 para o gestor", "dica 2", "dica 3", "dica 4"],
-  "ideal_roles": "descrição de 2-3 frases sobre os tipos de função e ambiente onde este perfil se destaca",
-  "combo_insight": "insight específico sobre a combinação ${primary[0]}+${secondary[0]}: como esses dois traços interagem na prática"
+  "headline": "",
+  "description": "",
+  "strengths": ["", "", "", "", ""],
+  "challenges": ["", "", "", ""],
+  "management_tips": ["", "", "", ""],
+  "ideal_roles": "",
+  "combo_insight": ""
 }`;
 
     try {
@@ -169,7 +190,7 @@ Gere um relatório em JSON com exatamente esta estrutura (responda SOMENTE o JSO
           messages: [
             {
               role: 'system',
-              content: 'Você é um especialista em análise DISC.',
+              content: `Você é Dra. Ana Rocha, psicóloga organizacional com 15 anos de experiência em assessment comportamental baseado no modelo DISC de William Moulton Marston (1928). Sua comunicação é direta, empática e livre de jargões acadêmicos desnecessários. Você escreve para gestores e profissionais de RH, não para acadêmicos. NUNCA use frases genéricas como "este perfil é único" ou "cada pessoa é diferente". NUNCA repita informações entre campos do JSON. Seja específico, perspicaz e acionável em cada campo.`,
             },
             { role: 'user', content: prompt },
           ],
@@ -186,8 +207,13 @@ Gere um relatório em JSON com exatamente esta estrutura (responda SOMENTE o JSO
 
       const result = JSON.parse(response.data.choices[0].message.content);
 
-      // Salva o resultado automaticamente no banco de dados (Item 1 & 6)
-      await this.usersService.updateAnalysis(user.id, result);
+      await this.usersService.updateAnalysis(
+        user.id,
+        result,
+        scoreMap,
+        primary[0],
+        secondary[0],
+      );
 
       return result;
     } catch (error: any) {

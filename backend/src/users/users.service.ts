@@ -15,9 +15,15 @@ export class UsersService {
     return this.usersRepository.save(newUser);
   }
 
-  async updateAnalysis(userId: number, result: any): Promise<void> {
+  async updateAnalysis(userId: number, result: any, scores: any, primaryType: string, secondaryType: string): Promise<void> {
     await this.usersRepository.update(userId, {
       analiseResult: JSON.stringify(result),
+      scoreD: scores.D,
+      scoreI: scores.I,
+      scoreS: scores.S,
+      scoreC: scores.C,
+      primaryType,
+      secondaryType,
     });
   }
 

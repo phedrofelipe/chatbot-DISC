@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Patch, Param, Get } from '@nestjs/common';
+import { Controller, Post, Body, Param, Get } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { User } from './entities/user.entity';
 
@@ -9,11 +9,6 @@ export class UsersController {
   @Post()
   async create(@Body() userData: Partial<User>) {
     return this.usersService.create(userData);
-  }
-
-  @Patch(':id/analysis')
-  async updateAnalysis(@Param('id') id: string, @Body() body: { result: any }) {
-    return this.usersService.updateAnalysis(parseInt(id), body.result);
   }
 
   @Get('email/:email')
