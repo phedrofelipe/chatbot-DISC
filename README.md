@@ -11,6 +11,7 @@ Uma ferramenta moderna de análise de perfil comportamental baseada no modelo DI
 - **Questionário DISC:** 10 perguntas estratégicas para identificar traços de Dominância (D), Influência (I), Estabilidade (S) e Conformidade (C).
 - **Análise Inteligente (IA):** Integração com a API do Groq (modelo Llama-3.3-70b) para gerar um relatório comportamental detalhado e personalizado.
 - **Dashboard Estratégico (Liderança):** Painel que compila os dados de todos os colaboradores e utiliza IA para fornecer uma análise de cultura, riscos e conselhos estratégicos para gestores.
+- **Gestão Autenticada:** Acesso ao Dashboard de Liderança protegido por autenticação JWT (JSON Web Token).
 - **Relatório Completo:**
   - **Headline:** Essência do perfil em uma frase.
   - **Descrição:** Parágrafo detalhado sobre o perfil combinado (Primário + Secundário).
@@ -18,22 +19,20 @@ Uma ferramenta moderna de análise de perfil comportamental baseada no modelo DI
   - **Dicas para Gestores:** Como melhor liderar e se comunicar com este perfil.
   - **Funções Ideais:** Ambientes e cargos onde o perfil mais se destaca.
   - **Insight de Combinação:** Como os traços dominantes interagem entre si.
+- **Visualização de Dados:** Gráficos interativos (Recharts) no dashboard organizacional.
+- **Exportação de Relatórios:** Download dos resultados individuais e do dashboard em PDF.
 - **Interface Moderna:** UI responsiva, animações fluidas (Framer Motion) e suporte a Tema Escuro/Claro.
-- **Persistência de Dados:** Banco de dados SQLite integrado para armazenamento de usuários e resultados (via TypeORM).
+- **Infraestrutura:** Containerização completa com Docker e suporte a PostgreSQL (em ambiente de produção).
+- **Persistência de Dados:** Banco de dados SQLite integrado para desenvolvimento e PostgreSQL para produção via TypeORM.
 
 ---
 
 ## 📈 Roadmap de Melhorias Profissionais
 
-Para elevar o projeto ao nível de produção, as seguintes melhorias estão em desenvolvimento:
-
-1.  **Segurança Avançada:** Isolamento total de chaves de API no backend e auditoria de variáveis de ambiente.
-2.  **Gestão Autenticada:** Acesso ao Dashboard de Liderança protegido por autenticação JWT.
-3.  **Escalabilidade de Dados:** Migração planejada para PostgreSQL para suportar múltiplos acessos simultâneos.
-4.  **Experiência do Usuário (UX):** Tratamento de erros detalhado, estados de carregamento e feedback visual aprimorado.
-5.  **Integridade do Negócio:** Validação rigorosa no backend para garantir a unicidade dos testes por colaborador.
-6.  **Infraestrutura Moderna:** Containerização completa com Docker e Docker Compose para deploy simplificado.
-7.  **Visualização de Dados:** Gráficos interativos e exportação de relatórios em PDF.
+1.  **Refatoração e Limpeza:** Remoção de placeholders de código e otimização do build.
+2.  **Testes Automatizados:** Implementação de testes unitários (Jest) para garantir a estabilidade do sistema.
+3.  **Performance:** Otimização do carregamento e redução do bundle size do frontend.
+4.  **Internacionalização (i18n):** Suporte nativo para múltiplos idiomas.
 
 ---
 
@@ -44,11 +43,14 @@ Para elevar o projeto ao nível de produção, as seguintes melhorias estão em 
 - **Framer Motion:** Animações de transição e interface.
 - **Lucide React:** Ícones modernos.
 - **Axios:** Comunicação com a API.
+- **Recharts:** Visualização de dados estatísticos.
+- **jsPDF + html2canvas:** Geração de relatórios em PDF.
 - **CSS Variables:** Sistema de temas (Dark/Light).
 
 ### Backend
 - **NestJS:** Framework robusto para o servidor.
-- **TypeORM + SQLite:** Persistência de dados leve e eficiente.
+- **TypeORM:** ORM para gestão de bancos SQL (SQLite/PostgreSQL).
+- **Passport + JWT:** Sistema de autenticação seguro.
 - **Groq API (Llama 3.3):** Processamento de linguagem natural para análise comportamental.
 - **ConfigModule:** Gestão de variáveis de ambiente.
 
@@ -59,6 +61,7 @@ Para elevar o projeto ao nível de produção, as seguintes melhorias estão em 
 ### Pré-requisitos
 - Node.js (v18 ou superior)
 - NPM ou Yarn
+- Docker & Docker Compose (Opcional)
 - Uma chave de API do [Groq Cloud](https://console.groq.com/)
 
 ### 1. Configuração do Backend
@@ -71,11 +74,9 @@ Para elevar o projeto ao nível de produção, as seguintes melhorias estão em 
    npm install
    ```
 3. Configure as variáveis de ambiente:
-   - Crie um arquivo `.env` na raiz da pasta `backend` (ou edite o existente).
-   - Adicione sua chave do Groq:
-     ```env
-     GROQ_API_KEY=sua_chave_aqui
-     ```
+   - Crie um arquivo `.env` na raiz da pasta `backend`.
+   - Utilize o `.env.example` na raiz do projeto como referência.
+   - Adicione sua chave do Groq e o segredo JWT.
 4. Inicie o servidor:
    ```bash
    npm run start:dev
@@ -97,34 +98,15 @@ Para elevar o projeto ao nível de produção, as seguintes melhorias estão em 
    ```
    *O frontend estará rodando em `http://localhost:5173`*
 
-### 3. Execução com Docker (Recomendado para Produção)
+### 3. Execução com Docker (Recomendado)
 Para subir o ambiente completo (Frontend, Backend e PostgreSQL):
-1. Copie o `.env.example` para `.env`:
-   ```bash
-   cp .env.example .env
-   ```
-2. Edite o arquivo `.env` com sua `GROQ_API_KEY` e senhas.
+1. Copie o `.env.example` para `.env` na raiz do projeto.
+2. Edite o arquivo `.env` com sua `GROQ_API_KEY` e outras configurações.
 3. Execute o Docker Compose:
    ```bash
    docker-compose up --build
    ```
    *O frontend estará disponível em `http://localhost`, o backend em `http://localhost:3000` e o banco PostgreSQL em `5432`.*
-
-```text
-chatbot-perfil/
-├── backend/            # API NestJS
-│   ├── src/
-│   │   ├── analysis/   # Lógica de integração com IA
-│   │   ├── users/      # Gestão de usuários e banco de dados
-│   │   └── app.module.ts
-│   └── db.sqlite       # Banco de dados local
-├── frontend/           # Aplicação React
-│   ├── src/
-│   │   ├── data/       # Questões e constantes DISC
-│   │   ├── App.tsx     # Componente principal e lógica do quiz
-│   │   └── App.css     # Estilização e temas
-└── README.md           # Documentação do projeto
-```
 
 ---
 

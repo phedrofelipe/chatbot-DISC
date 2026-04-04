@@ -20,8 +20,6 @@ interface DashboardData {
   discDistribution: { name: string; value: number }[];
   sectorData: { name: string; value: number }[];
   analysis: {
-...
-
     culture_summary: string;
     leadership_focus: string[];
     strategic_advice: string;
@@ -46,7 +44,7 @@ function App() {
   const [screen, setScreen] = useState<Screen>('intro');
   const [loadingMessage, setLoadingMessage] = useState('Analisando seu perfil…');
   const [adminToken, setAdminToken] = useState<string | null>(localStorage.getItem('adminToken'));
-...
+
   const loadingMessages = [
     'Sintonizando com a teoria de Marston...',
     'Processando vetores comportamentais...',
@@ -746,7 +744,7 @@ function App() {
     <div className="container" data-theme={theme}>
       <div className="top-bar">
         {screen === 'intro' && (
-          <button className="btn-dashboard-entry" onClick={loadDashboard}>
+          <button className="btn-dashboard-entry" onClick={() => loadDashboard()}>
             📊 Dashboard
           </button>
         )}
