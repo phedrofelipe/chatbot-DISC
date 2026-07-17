@@ -1,32 +1,41 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcryptjs';
+import { UsersService } from '../users/users.service';
+import { UserRole } from '../common/enums/user-role.enum';
+import { JwtPayload } from './types';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private configService: ConfigService,
+    private usersService: UsersService,
     private jwtService: JwtService,
   ) {}
 
-  async validateAdmin(email: string, pass: string): Promise<any> {
-    const adminEmail = this.configService.get<string>('ADMIN_EMAIL');
-    const adminPass = this.configService.get<string>('ADMIN_PASSWORD');
+  async login(email: string, password: string) {
+    const user = await this.usersService.findByEmailWithPassword(email);
 
-    if (email === adminEmail && pass === adminPass) {
-      return { email: adminEmail };
-    }
-    return null;
-  }
-
-  async login(email: string, pass: string) {
-    const admin = await this.validateAdmin(email, pass);
-    if (!admin) {
+    if (!user || user.role === UserRole.COLABORADOR || !user.password) {
       throw new UnauthorizedException('Credenciais inválidas');
     }
-    const payload = { email: admin.email, sub: 'admin' };
+
+    const passwordMatches = await bcrypt.compare(password, user.password);
+    if (!passwordMatches) {
+      throw new UnauthorizedException('Credenciais inválidas');
+    }
+
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      departmentId: user.departmentId,
+    };
+
     return {
       access_token: this.jwtService.sign(payload),
+      role: user.role,
+      nomeCompleto: user.nomeCompleto,
+      departmentId: user.departmentId,
     };
   }
 }

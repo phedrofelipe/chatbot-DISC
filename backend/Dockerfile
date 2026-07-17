@@ -1,21 +1,23 @@
-# Base image
-FROM node:22-alpine
-
-# Create app directory
+# Build stage
+FROM node:22-alpine AS build
 WORKDIR /usr/src/app
 
-# Install app dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
-# Bundle app source
 COPY . .
-
-# Build the app
 RUN npm run build
 
-# Expose the port
-EXPOSE 3000
+# Production stage
+FROM node:22-alpine AS production
+WORKDIR /usr/src/app
+ENV NODE_ENV=production
 
-# Start the server
-CMD ["npm", "run", "start:prod"]
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY --from=build /usr/src/app/dist ./dist
+
+USER node
+EXPOSE 3000
+CMD ["node", "dist/main"]

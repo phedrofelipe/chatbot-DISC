@@ -1,4 +1,14 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
+import { Exclude } from 'class-transformer';
+import { Department } from '../../departments/entities/department.entity';
+import { UserRole } from '../../common/enums/user-role.enum';
 
 @Entity('users')
 export class User {
@@ -11,13 +21,29 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  @Column()
-  setor: string;
+  @Column({ type: 'enum', enum: UserRole, default: UserRole.COLABORADOR })
+  role: UserRole;
 
-  @Column()
+  // Somente contas de staff (Administrador/Gestor/Líder) possuem senha.
+  @Exclude()
+  @Column({ type: 'varchar', nullable: true, select: false })
+  password: string | null;
+
+  @ManyToOne(() => Department, {
+    nullable: true,
+    eager: false,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({ name: 'departmentId' })
+  department: Department | null;
+
+  @Column({ nullable: true })
+  departmentId: number | null;
+
+  @Column({ nullable: true })
   idade: number;
 
-  @Column()
+  @Column({ nullable: true })
   regiao: string;
 
   @Column({ type: 'text', nullable: true })
