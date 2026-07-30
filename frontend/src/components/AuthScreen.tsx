@@ -8,9 +8,72 @@ interface AuthScreenProps {
   setUserData: (data: UserFormData) => void;
   departments: Department[];
   onSubmit: (e: React.FormEvent) => void;
+  needsAccessCode?: boolean;
+  accessCode?: string;
+  setAccessCode?: (v: string) => void;
+  onVerifyAccess?: (e: React.FormEvent) => void;
+  onCancelAccessCode?: () => void;
+  accessError?: string;
 }
 
-export function AuthScreen({ userData, setUserData, departments, onSubmit }: AuthScreenProps) {
+export function AuthScreen({
+  userData,
+  setUserData,
+  departments,
+  onSubmit,
+  needsAccessCode,
+  accessCode,
+  setAccessCode,
+  onVerifyAccess,
+  onCancelAccessCode,
+  accessError,
+}: AuthScreenProps) {
+  if (needsAccessCode) {
+    return (
+      <motion.div
+        className="auth"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+      >
+        <div className="auth-card">
+          <h2>Já vimos você por aqui</h2>
+          <p>
+            O e-mail <strong>{userData.email}</strong> já concluiu a avaliação. Informe o código
+            de acesso que você recebeu ao terminar o quiz para ver seu resultado.
+          </p>
+          <form onSubmit={onVerifyAccess}>
+            <div className="form-group">
+              <label>Código de acesso</label>
+              <input
+                type="text"
+                required
+                autoFocus
+                placeholder="XXXX-XXXX"
+                value={accessCode}
+                onChange={(e) => setAccessCode?.(e.target.value)}
+              />
+            </div>
+            {accessError && <p className="admin-error">{accessError}</p>}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button type="submit" className="btn-auth" style={{ flex: 1 }}>
+                Ver meu resultado →
+              </button>
+              <button
+                type="button"
+                className="btn-restart"
+                style={{ flex: 1, background: 'var(--surface2)', color: 'var(--text)' }}
+                onClick={onCancelAccessCode}
+              >
+                Usar outro e-mail
+              </button>
+            </div>
+          </form>
+        </div>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       className="auth"

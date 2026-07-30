@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import axios from 'axios';
 import { AnalysisService } from './analysis.service';
 import { UsersService } from '../users/users.service';
@@ -15,6 +19,7 @@ describe('AnalysisService', () => {
     usersService = {
       findByEmail: jest.fn(),
       updateAnalysis: jest.fn(),
+      verifyAccessCode: jest.fn(),
     };
     configService = { get: jest.fn().mockReturnValue('fake-groq-key') };
     service = new AnalysisService(
@@ -35,20 +40,42 @@ describe('AnalysisService', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('retorna a análise em cache sem chamar a API do Groq', async () => {
+  it('rejeita buscar análise em cache sem accessCode', async () => {
+    (usersService.findByEmail as jest.Mock).mockResolvedValue({
+      id: 1,
+      analiseResult: JSON.stringify({ headline: 'Já processado' }),
+    });
+
+    await expect(
+      service.generateAnalysis({
+        email: 'ja-tem@teste.com',
+        scores: { D: 5, I: 2, S: 1, C: 2 } as any,
+        answers: [],
+      }),
+    ).rejects.toThrow(UnauthorizedException);
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('retorna a análise em cache sem chamar a API do Groq quando o accessCode é válido', async () => {
     const cached = { headline: 'Já processado' };
     (usersService.findByEmail as jest.Mock).mockResolvedValue({
       id: 1,
       analiseResult: JSON.stringify(cached),
     });
+    (usersService.verifyAccessCode as jest.Mock).mockResolvedValue({ id: 1 });
 
     const result = await service.generateAnalysis({
       email: 'ja-tem@teste.com',
       scores: { D: 5, I: 2, S: 1, C: 2 } as any,
       answers: [],
+      accessCode: 'ABCD-1234',
     });
 
     expect(result).toEqual(cached);
+    expect(usersService.verifyAccessCode).toHaveBeenCalledWith(
+      'ja-tem@teste.com',
+      'ABCD-1234',
+    );
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 

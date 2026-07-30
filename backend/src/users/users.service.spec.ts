@@ -27,7 +27,7 @@ describe('UsersService', () => {
       usersRepository.findOneBy.mockResolvedValue(null);
       departmentsRepository.findOneBy.mockResolvedValue({ id: 1, name: 'TI' });
 
-      const result = await service.create({
+      const { user, accessCode } = await service.create({
         nomeCompleto: 'João Silva',
         email: 'joao@teste.com',
         departmentId: 1,
@@ -35,8 +35,10 @@ describe('UsersService', () => {
         regiao: 'Sudeste',
       });
 
-      expect(result.role).toBe(UserRole.COLABORADOR);
-      expect(result.password).toBeNull();
+      expect(user.role).toBe(UserRole.COLABORADOR);
+      expect(user.password).toBeNull();
+      expect(accessCode).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+      expect(user.accessCodeHash).not.toBe(accessCode);
     });
 
     it('rejeita e-mail duplicado', async () => {

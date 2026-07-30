@@ -2,6 +2,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -15,6 +16,19 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { FindUsersQueryDto } from './dto/find-users-query.dto';
 
 const SALT_ROUNDS = 10;
+// Sem 0/O/1/I/L — evita ambiguidade quando o colaborador copia o código à mão.
+const ACCESS_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+function generateAccessCode(): string {
+  let code = '';
+  for (let i = 0; i < 8; i++) {
+    code +=
+      ACCESS_CODE_ALPHABET[
+        Math.floor(Math.random() * ACCESS_CODE_ALPHABET.length)
+      ];
+  }
+  return `${code.slice(0, 4)}-${code.slice(4)}`;
+}
 
 @Injectable()
 export class UsersService {
@@ -41,9 +55,14 @@ export class UsersService {
     }
   }
 
-  async create(dto: CreateCollaboratorDto): Promise<User> {
+  async create(
+    dto: CreateCollaboratorDto,
+  ): Promise<{ user: User; accessCode: string }> {
     await this.assertEmailAvailable(dto.email);
     await this.assertDepartmentExists(dto.departmentId);
+
+    const accessCode = generateAccessCode();
+    const accessCodeHash = await bcrypt.hash(accessCode, SALT_ROUNDS);
 
     const newUser = this.usersRepository.create({
       nomeCompleto: dto.nomeCompleto,
@@ -53,8 +72,10 @@ export class UsersService {
       regiao: dto.regiao,
       role: UserRole.COLABORADOR,
       password: null,
+      accessCodeHash,
     });
-    return this.usersRepository.save(newUser);
+    const user = await this.usersRepository.save(newUser);
+    return { user, accessCode };
   }
 
   async createStaff(dto: CreateStaffUserDto): Promise<User> {
@@ -105,6 +126,31 @@ export class UsersService {
       where: { email },
       relations: ['department'],
     });
+  }
+
+  // Público: dá acesso ao resultado já salvo mediante prova de posse do
+  // código de acesso (evita que o e-mail sozinho seja suficiente, como era antes).
+  async verifyAccessCode(email: string, accessCode: string): Promise<User> {
+    const invalidCredentials = () =>
+      new UnauthorizedException('E-mail ou código de acesso inválidos');
+
+    const user = await this.usersRepository
+      .createQueryBuilder('user')
+      .addSelect('user.accessCodeHash')
+      .leftJoinAndSelect('user.department', 'department')
+      .where('user.email = :email', { email })
+      .getOne();
+
+    if (!user || !user.accessCodeHash) {
+      throw invalidCredentials();
+    }
+
+    const matches = await bcrypt.compare(accessCode, user.accessCodeHash);
+    if (!matches) {
+      throw invalidCredentials();
+    }
+
+    return user;
   }
 
   async findByEmailWithPassword(email: string): Promise<User | null> {
@@ -187,5 +233,88 @@ export class UsersService {
   async remove(id: number): Promise<void> {
     await this.findOne(id);
     await this.usersRepository.delete(id);
+  }
+
+  // Zera o resultado do quiz de um colaborador (mantém cadastro e histórico) e
+  // emite um novo código de acesso, já que o antigo pode ter sido esquecido —
+  // é este o mecanismo de recuperação para quem perdeu e-mail+código.
+  async resetAnalysis(id: number): Promise<{ user: User; accessCode: string }> {
+    const user = await this.findOne(id);
+    if (user.role !== UserRole.COLABORADOR) {
+      throw new ConflictException(
+        'Somente colaboradores possuem respostas de quiz para reiniciar',
+      );
+    }
+
+    const accessCode = generateAccessCode();
+    const accessCodeHash = await bcrypt.hash(accessCode, SALT_ROUNDS);
+
+    await this.usersRepository.update(id, {
+      analiseResult: null,
+      scoreD: null,
+      scoreI: null,
+      scoreS: null,
+      scoreC: null,
+      primaryType: null,
+      secondaryType: null,
+      accessCodeHash,
+    });
+
+    return { user: await this.findOne(id), accessCode };
+  }
+
+  // Reset em massa: zera o resultado de TODOS os colaboradores (ex.: novo ciclo
+  // de avaliação). Não deleta cadastros nem regenera códigos de acesso — como o
+  // resultado deixa de existir, o colaborador entra direto no quiz sem precisar do código.
+  async resetAllAnalysis(): Promise<{ affected: number }> {
+    const result = await this.usersRepository
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        analiseResult: null,
+        scoreD: null,
+        scoreI: null,
+        scoreS: null,
+        scoreC: null,
+        primaryType: null,
+        secondaryType: null,
+      })
+      .where('role = :role', { role: UserRole.COLABORADOR })
+      .execute();
+
+    return { affected: result.affected ?? 0 };
+  }
+
+  // Limpeza total: remove todos os Colaboradores, Líderes e Gestores, e todos
+  // os departamentos — só a(s) conta(s) de Administrador permanece(m).
+  async wipeData(): Promise<{
+    removedUsers: number;
+    removedDepartments: number;
+  }> {
+    const usersResult = await this.usersRepository
+      .createQueryBuilder()
+      .delete()
+      .from(User)
+      .where('role != :role', { role: UserRole.ADMIN })
+      .execute();
+
+    // Zera o departmentId de quem sobrou (só admins) para não travar o FK
+    // RESTRICT de departments na exclusão abaixo.
+    await this.usersRepository
+      .createQueryBuilder()
+      .update(User)
+      .set({ departmentId: null })
+      .execute();
+
+    const departmentsResult = await this.departmentsRepository
+      .createQueryBuilder()
+      .delete()
+      .from(Department)
+      .execute();
+
+    return {
+      removedUsers: usersResult.affected ?? 0,
+      removedDepartments: departmentsResult.affected ?? 0,
+    };
   }
 }

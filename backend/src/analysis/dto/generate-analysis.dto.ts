@@ -5,6 +5,7 @@ import {
   IsEmail,
   IsIn,
   IsInt,
+  IsOptional,
   IsString,
   Max,
   Min,
@@ -57,4 +58,10 @@ export class GenerateAnalysisDto {
   @ValidateNested({ each: true })
   @Type(() => AnswerDto)
   answers: AnswerDto[];
+
+  // Só é exigido quando o colaborador já possui uma análise salva — comprova
+  // que quem está pedindo o resultado em cache é o próprio dono do e-mail.
+  @IsOptional()
+  @IsString()
+  accessCode?: string;
 }

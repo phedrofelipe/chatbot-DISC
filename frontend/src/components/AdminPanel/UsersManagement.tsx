@@ -4,6 +4,7 @@ import type { CollaboratorUser, Department, StaffUser, UserRole } from '../../ty
 
 interface UsersManagementProps {
   token: string;
+  onDataWiped?: () => void;
 }
 
 type AnyUser = CollaboratorUser | StaffUser;
@@ -21,7 +22,9 @@ const ROLE_LABELS: Record<UserRole, string> = {
   colaborador: 'Colaborador',
 };
 
-export function UsersManagement({ token }: UsersManagementProps) {
+const WIPE_CONFIRMATION_PHRASE = 'APAGAR TUDO';
+
+export function UsersManagement({ token, onDataWiped }: UsersManagementProps) {
   const [subTab, setSubTab] = useState<'colaboradores' | 'staff'>('colaboradores');
   const [allUsers, setAllUsers] = useState<AnyUser[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -158,8 +161,91 @@ export function UsersManagement({ token }: UsersManagementProps) {
     }
   };
 
+  const resetOneAnalysis = async (c: CollaboratorUser) => {
+    if (
+      !window.confirm(
+        `Reiniciar as respostas de "${c.nomeCompleto}"? O resultado atual será apagado e um novo código de acesso será gerado.`,
+      )
+    )
+      return;
+    setError('');
+    try {
+      const res = await api.patch(`/users/${c.id}/reset-analysis`, {}, authHeaders(token));
+      await load();
+      window.alert(
+        `Respostas de "${c.nomeCompleto}" reiniciadas.\n\nNovo código de acesso: ${res.data.accessCode}\n\nInforme este código ao colaborador — ele não será mostrado novamente.`,
+      );
+    } catch (err) {
+      setError(getErrorMessage(err, 'Erro ao reiniciar respostas do colaborador.'));
+    }
+  };
+
+  const resetAllAnalysis = async () => {
+    const confirmation = window.prompt(
+      `Esta ação apaga o resultado de TODOS os ${collaborators.length} colaboradores (o cadastro é mantido). Para confirmar, digite REINICIAR:`,
+    );
+    if (confirmation !== 'REINICIAR') return;
+    setError('');
+    try {
+      const res = await api.post(
+        '/users/reset-all-analysis',
+        { confirm: true },
+        authHeaders(token),
+      );
+      await load();
+      window.alert(`${res.data.affected} colaborador(es) tiveram as respostas reiniciadas.`);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Erro ao reiniciar as respostas em massa.'));
+    }
+  };
+
+  const wipeAllData = async () => {
+    const confirmation = window.prompt(
+      `AÇÃO IRREVERSÍVEL: isso apaga TODAS as contas de Colaborador, Líder e Gestor, e TODOS os departamentos. Só a(s) conta(s) de Administrador permanece(m). Não é possível desfazer.\n\nPara confirmar, digite exatamente: ${WIPE_CONFIRMATION_PHRASE}`,
+    );
+    if (confirmation !== WIPE_CONFIRMATION_PHRASE) return;
+    if (!window.confirm('Tem certeza absoluta? Todos os cadastros e departamentos serão apagados agora.'))
+      return;
+
+    setError('');
+    try {
+      const res = await api.post(
+        '/users/wipe-data',
+        { confirmationPhrase: confirmation },
+        authHeaders(token),
+      );
+      await load();
+      onDataWiped?.();
+      window.alert(
+        `Limpeza concluída: ${res.data.removedUsers} usuário(s) e ${res.data.removedDepartments} departamento(s) removidos.`,
+      );
+    } catch (err) {
+      setError(getErrorMessage(err, 'Erro ao limpar os dados.'));
+    }
+  };
+
   return (
     <div className="admin-section">
+      <div
+        style={{
+          border: '1px solid var(--danger, #c0392b)',
+          borderRadius: '8px',
+          padding: '16px',
+          marginBottom: '20px',
+        }}
+      >
+        <strong style={{ color: 'var(--danger, #c0392b)' }}>⚠ Zona de perigo</strong>
+        <p style={{ margin: '8px 0' }}>
+          Limpar dados apaga permanentemente todas as contas de Colaborador, Líder e Gestor, e
+          todos os departamentos. Só a(s) conta(s) de Administrador permanece(m). Use isso para
+          reiniciar a plataforma do zero (ex.: novo cliente/implantação) — não para reiniciar um
+          ciclo de avaliação (use "Reiniciar respostas" para isso).
+        </p>
+        <button className="admin-link-btn danger" onClick={wipeAllData}>
+          Limpar dados (apagar tudo, exceto Admin)
+        </button>
+      </div>
+
       <div className="admin-subtabs">
         <button
           className={`admin-tab-btn ${subTab === 'colaboradores' ? 'active' : ''}`}
@@ -177,6 +263,14 @@ export function UsersManagement({ token }: UsersManagementProps) {
 
       {error && <p className="admin-error">{error}</p>}
       {loading && <p>Carregando...</p>}
+
+      {subTab === 'colaboradores' && collaborators.length > 0 && (
+        <div style={{ marginBottom: '16px' }}>
+          <button className="admin-link-btn danger" onClick={resetAllAnalysis}>
+            Reiniciar respostas de todos os colaboradores
+          </button>
+        </div>
+      )}
 
       {subTab === 'staff' && (
         <div style={{ marginBottom: '16px' }}>
@@ -358,6 +452,11 @@ export function UsersManagement({ token }: UsersManagementProps) {
                     <button className="admin-link-btn" onClick={() => startEdit(c)}>
                       Editar
                     </button>
+                    {c.analiseResult && (
+                      <button className="admin-link-btn" onClick={() => resetOneAnalysis(c)}>
+                        Reiniciar respostas
+                      </button>
+                    )}
                     <button className="admin-link-btn danger" onClick={() => removeUser(c.id)}>
                       Excluir
                     </button>

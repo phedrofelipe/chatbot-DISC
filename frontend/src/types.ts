@@ -1,6 +1,7 @@
 export type Screen =
   | 'intro'
   | 'auth'
+  | 'access-code'
   | 'quiz'
   | 'loading'
   | 'result'
@@ -69,6 +70,35 @@ export interface StaffUser {
   role: UserRole;
   departmentId: number | null;
   createdAt?: string;
+}
+
+// Formato retornado pelos endpoints públicos (GET /users/email/:email, POST /users)
+// — nunca inclui analiseResult/scores, que exigem o código de acesso.
+export interface PublicUserSummary {
+  id: number;
+  nomeCompleto: string;
+  email: string;
+  departmentId: number | null;
+  idade: number;
+  regiao: string;
+  hasResult: boolean;
+}
+
+// Formato retornado após verificar e-mail + código de acesso (POST /users/verify-access).
+export interface PublicUserResult {
+  id: number;
+  nomeCompleto: string;
+  email: string;
+  departmentId: number | null;
+  idade: number;
+  regiao: string;
+  analiseResult: string | null;
+  scoreD: number | null;
+  scoreI: number | null;
+  scoreS: number | null;
+  scoreC: number | null;
+  primaryType: string | null;
+  secondaryType: string | null;
 }
 
 export interface UserFormData {

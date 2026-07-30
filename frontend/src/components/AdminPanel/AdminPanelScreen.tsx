@@ -42,7 +42,7 @@ export function AdminPanelScreen({
       </div>
 
       {activeTab === 'users' ? (
-        <UsersManagement token={token} />
+        <UsersManagement token={token} onDataWiped={onDepartmentsChanged} />
       ) : (
         <DepartmentsManagement token={token} onChanged={onDepartmentsChanged} />
       )}

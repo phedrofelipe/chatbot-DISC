@@ -48,13 +48,13 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
     container_name: disc-frontend
     restart: always
     depends_on:
       backend:
         condition: service_healthy
-    environment:
-      - VITE_API_URL=http://localhost:3000
     ports:
       - "80:80"
 

@@ -3,6 +3,7 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosError } from 'axios';
@@ -237,13 +238,22 @@ Regras:
   async generateAnalysis(
     dto: GenerateAnalysisDto,
   ): Promise<CollaboratorAnalysisResult> {
-    const { email, scores, answers } = dto;
+    const { email, scores, answers, accessCode } = dto;
     const user = await this.usersService.findByEmail(email);
     if (!user) {
       throw new NotFoundException('Usuário não encontrado');
     }
 
     if (user.analiseResult) {
+      // Já existe uma análise salva — só a devolvemos mediante o código de
+      // acesso, senão qualquer um com o e-mail poderia ler o perfil de outro.
+      if (!accessCode) {
+        throw new UnauthorizedException(
+          'Este colaborador já possui uma análise salva. Informe o código de acesso para recuperá-la.',
+        );
+      }
+      await this.usersService.verifyAccessCode(email, accessCode);
+
       try {
         return JSON.parse(user.analiseResult) as CollaboratorAnalysisResult;
       } catch {

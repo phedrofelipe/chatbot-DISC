@@ -3,10 +3,11 @@ import { AnimatePresence } from 'framer-motion';
 import { Sun, Moon } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { api, authHeaders } from './api';
+import { api, authHeaders, getErrorMessage } from './api';
 import { questions } from './data/questions';
 import { IntroScreen } from './components/IntroScreen';
 import { AuthScreen } from './components/AuthScreen';
+import { AccessCodeScreen } from './components/AccessCodeScreen';
 import { QuizScreen } from './components/QuizScreen';
 import { LoadingScreen } from './components/LoadingScreen';
 import { ResultScreen } from './components/ResultScreen';
@@ -62,6 +63,10 @@ function App() {
   }, [screen]);
 
   const [staffCreds, setStaffCreds] = useState({ email: '', pass: '' });
+  const [needsAccessCode, setNeedsAccessCode] = useState(false);
+  const [accessCodeInput, setAccessCodeInput] = useState('');
+  const [accessError, setAccessError] = useState('');
+  const [newAccessCode, setNewAccessCode] = useState<string | null>(null);
   const [currentQ, setCurrentQ] = useState(0);
   const [scores, setScores] = useState({ D: 0, I: 0, S: 0, C: 0 });
   const [answers, setAnswers] = useState<{ q: string; a: string; type: string }[]>([]);
@@ -95,32 +100,95 @@ function App() {
   useEffect(() => {
     const savedEmail = localStorage.getItem('userEmail');
     if (savedEmail) {
-      checkExistingUser(savedEmail);
+      checkExistingUser(savedEmail, localStorage.getItem('userAccessCode'));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const checkExistingUser = async (email: string) => {
+  const applyUserSummary = (data: {
+    nomeCompleto: string;
+    email: string;
+    departmentId: number | null;
+    idade: number;
+    regiao: string;
+  }) => {
+    setUserData({
+      nomeCompleto: data.nomeCompleto,
+      email: data.email,
+      departmentId: data.departmentId ? String(data.departmentId) : '',
+      idade: data.idade?.toString() ?? '',
+      regiao: data.regiao,
+    });
+  };
+
+  const checkExistingUser = async (email: string, savedCode: string | null) => {
     try {
       const res = await api.get(`/users/email/${email}`);
-      if (res.data) {
-        setUserData({
-          nomeCompleto: res.data.nomeCompleto,
-          email: res.data.email,
-          departmentId: res.data.departmentId ? String(res.data.departmentId) : '',
-          idade: res.data.idade?.toString() ?? '',
-          regiao: res.data.regiao,
-        });
+      if (!res.data) return;
+      applyUserSummary(res.data);
 
-        if (res.data.analiseResult) {
-          setAnalysis(JSON.parse(res.data.analiseResult));
+      if (!res.data.hasResult) {
+        setScreen('quiz');
+        return;
+      }
+
+      if (savedCode) {
+        try {
+          const verifyRes = await api.post('/users/verify-access', { email, accessCode: savedCode });
+          setAnalysis(JSON.parse(verifyRes.data.analiseResult));
+          setScores({
+            D: verifyRes.data.scoreD ?? 0,
+            I: verifyRes.data.scoreI ?? 0,
+            S: verifyRes.data.scoreS ?? 0,
+            C: verifyRes.data.scoreC ?? 0,
+          });
           setScreen('result');
-        } else {
-          setScreen('quiz');
+          return;
+        } catch {
+          localStorage.removeItem('userAccessCode');
         }
       }
+
+      // Tem resultado salvo, mas sem código válido guardado — pede o código.
+      setScreen('auth');
+      setNeedsAccessCode(true);
     } catch (error) {
       console.error('Erro ao buscar usuário:', error);
     }
+  };
+
+  const verifyAccess = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAccessError('');
+    try {
+      const res = await api.post('/users/verify-access', {
+        email: userData.email,
+        accessCode: accessCodeInput,
+      });
+      applyUserSummary(res.data);
+      setAnalysis(JSON.parse(res.data.analiseResult));
+      setScores({
+        D: res.data.scoreD ?? 0,
+        I: res.data.scoreI ?? 0,
+        S: res.data.scoreS ?? 0,
+        C: res.data.scoreC ?? 0,
+      });
+      localStorage.setItem('userEmail', res.data.email);
+      localStorage.setItem('userAccessCode', accessCodeInput);
+      setNeedsAccessCode(false);
+      setAccessCodeInput('');
+      setScreen('result');
+    } catch (error) {
+      console.error('Erro ao verificar código de acesso:', error);
+      setAccessError(getErrorMessage(error, 'E-mail ou código de acesso inválidos.'));
+    }
+  };
+
+  const cancelAccessCode = () => {
+    setNeedsAccessCode(false);
+    setAccessError('');
+    setAccessCodeInput('');
+    setUserData({ nomeCompleto: '', email: '', departmentId: '', idade: '', regiao: '' });
   };
 
   // Aplica o tema globalmente no elemento raiz
@@ -134,6 +202,8 @@ function App() {
   };
 
   const startIntro = () => {
+    setNeedsAccessCode(false);
+    setAccessError('');
     setScreen('auth');
   };
 
@@ -154,20 +224,14 @@ function App() {
       const res = await api.get(`/users/email/${userData.email}`);
 
       if (res.data) {
-        if (res.data.analiseResult) {
-          setAnalysis(JSON.parse(res.data.analiseResult));
-          setUserData({
-            nomeCompleto: res.data.nomeCompleto,
-            email: res.data.email,
-            departmentId: res.data.departmentId ? String(res.data.departmentId) : '',
-            idade: res.data.idade?.toString() ?? '',
-            regiao: res.data.regiao,
-          });
-          localStorage.setItem('userEmail', res.data.email);
-          setScreen('result');
+        applyUserSummary(res.data);
+        localStorage.setItem('userEmail', res.data.email);
+
+        if (res.data.hasResult) {
+          setAccessError('');
+          setNeedsAccessCode(true);
           return;
         }
-        localStorage.setItem('userEmail', res.data.email);
       } else {
         const userRes = await api.post('/users', {
           nomeCompleto: userData.nomeCompleto,
@@ -177,6 +241,10 @@ function App() {
           regiao: userData.regiao,
         });
         localStorage.setItem('userEmail', userRes.data.email);
+        localStorage.setItem('userAccessCode', userRes.data.accessCode);
+        setNewAccessCode(userRes.data.accessCode);
+        setScreen('access-code');
+        return;
       }
 
       setScreen('quiz');
@@ -210,6 +278,7 @@ function App() {
         email: userData.email,
         scores: finalScores,
         answers: finalAnswers,
+        accessCode: localStorage.getItem('userAccessCode') || undefined,
       });
       setAnalysis(response.data);
       setScreen('result');
@@ -222,8 +291,12 @@ function App() {
 
   const logout = () => {
     localStorage.removeItem('userEmail');
+    localStorage.removeItem('userAccessCode');
     setUserData({ nomeCompleto: '', email: '', departmentId: '', idade: '', regiao: '' });
     setAnalysis(null);
+    setNeedsAccessCode(false);
+    setAccessCodeInput('');
+    setAccessError('');
     setScreen('intro');
   };
 
@@ -243,8 +316,8 @@ function App() {
       setStaffSession(session);
       localStorage.setItem('staffSession', JSON.stringify(session));
       loadDashboard(session.token);
-    } catch {
-      alert('Credenciais administrativas inválidas');
+    } catch (error) {
+      alert(getErrorMessage(error, 'Credenciais administrativas inválidas'));
     }
   };
 
@@ -357,6 +430,25 @@ function App() {
             setUserData={setUserData}
             departments={departments}
             onSubmit={startQuiz}
+            needsAccessCode={needsAccessCode}
+            accessCode={accessCodeInput}
+            setAccessCode={setAccessCodeInput}
+            onVerifyAccess={verifyAccess}
+            onCancelAccessCode={cancelAccessCode}
+            accessError={accessError}
+          />
+        )}
+        {screen === 'access-code' && newAccessCode && (
+          <AccessCodeScreen
+            email={userData.email}
+            accessCode={newAccessCode}
+            onContinue={() => {
+              setNewAccessCode(null);
+              setScreen('quiz');
+              setCurrentQ(0);
+              setScores({ D: 0, I: 0, S: 0, C: 0 });
+              setAnswers([]);
+            }}
           />
         )}
         {screen === 'quiz' && <QuizScreen currentQ={currentQ} onSelect={selectOption} />}

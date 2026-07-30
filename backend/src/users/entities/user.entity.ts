@@ -29,6 +29,12 @@ export class User {
   @Column({ type: 'varchar', nullable: true, select: false })
   password: string | null;
 
+  // Somente colaboradores possuem código de acesso (substitui a senha para
+  // permitir recuperar o resultado do quiz sem expor dados por e-mail sozinho).
+  @Exclude()
+  @Column({ type: 'varchar', nullable: true, select: false })
+  accessCodeHash: string | null;
+
   @ManyToOne(() => Department, {
     nullable: true,
     eager: false,
@@ -47,25 +53,25 @@ export class User {
   regiao: string;
 
   @Column({ type: 'text', nullable: true })
-  analiseResult: string; // Guardaremos o JSON da análise aqui
+  analiseResult: string | null; // Guardaremos o JSON da análise aqui
 
-  @Column({ nullable: true })
-  scoreD: number;
+  @Column({ type: 'int', nullable: true })
+  scoreD: number | null;
 
-  @Column({ nullable: true })
-  scoreI: number;
+  @Column({ type: 'int', nullable: true })
+  scoreI: number | null;
 
-  @Column({ nullable: true })
-  scoreS: number;
+  @Column({ type: 'int', nullable: true })
+  scoreS: number | null;
 
-  @Column({ nullable: true })
-  scoreC: number;
+  @Column({ type: 'int', nullable: true })
+  scoreC: number | null;
 
-  @Column({ length: 1, nullable: true })
-  primaryType: string;
+  @Column({ type: 'varchar', length: 1, nullable: true })
+  primaryType: string | null;
 
-  @Column({ length: 1, nullable: true })
-  secondaryType: string;
+  @Column({ type: 'varchar', length: 1, nullable: true })
+  secondaryType: string | null;
 
   @CreateDateColumn()
   createdAt: Date;
