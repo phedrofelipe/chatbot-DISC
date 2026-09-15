@@ -19,12 +19,16 @@ export class AnalysisController {
   ) {}
 
   // Público: fluxo de auto-atendimento do colaborador ao concluir o quiz.
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  // Tracker é por IP: um pico de colaboradores terminando o quiz ao mesmo
+  // tempo atrás do mesmo NAT da empresa compartilha essa cota.
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Post()
   async analyze(@Body() dto: GenerateAnalysisDto) {
     return this.analysisService.generateAnalysis(dto);
   }
 
+  // Colaborador não acessa este endpoint — ele vê o próprio resultado via
+  // GET /users/me (mesmo formato do ResultScreen), não o painel agregado.
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.GESTOR, UserRole.LIDER)
   @Get('dashboard')

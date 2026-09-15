@@ -7,7 +7,9 @@ import { LoginDto } from './dto/login.dto';
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  // Tracker é por IP: colaboradores atrás do mesmo NAT da empresa
+  // compartilham essa cota ao acessar o próprio resultado via login.
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('login')
   async login(@Body() dto: LoginDto) {

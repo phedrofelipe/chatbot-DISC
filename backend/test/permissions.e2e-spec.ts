@@ -17,6 +17,7 @@ describe('Permissionamento (RBAC) e2e', () => {
   let adminToken: string;
   let gestorToken: string;
   let liderAToken: string;
+  let colabAToken: string;
 
   let deptA: number;
   let deptB: number;
@@ -24,6 +25,7 @@ describe('Permissionamento (RBAC) e2e', () => {
   let colabBId: number;
   let colabAEmail: string;
   let colabBEmail: string;
+  let colabAAccessCode: string;
   let colabBAccessCode: string;
 
   const ts = Date.now();
@@ -124,6 +126,7 @@ describe('Permissionamento (RBAC) e2e', () => {
       })
       .expect(201);
     colabAId = colabARes.body.id;
+    colabAAccessCode = colabARes.body.accessCode;
 
     const colabBRes = await request(server)
       .post('/users')
@@ -267,12 +270,24 @@ describe('Permissionamento (RBAC) e2e', () => {
     });
   });
 
-  describe('Autenticação de staff', () => {
-    it('Colaborador não consegue logar via /auth/login (não possui senha)', async () => {
+  describe('Autenticação de staff e de Colaborador', () => {
+    it('Colaborador não consegue logar com código de acesso errado', async () => {
       await request(server)
         .post('/auth/login')
         .send({ email: colabAEmail, password: 'qualquer-coisa' })
         .expect(401);
+    });
+
+    it('Colaborador loga com o próprio código de acesso e recebe um token com role colaborador', async () => {
+      const res = await request(server)
+        .post('/auth/login')
+        .send({ email: colabAEmail, password: colabAAccessCode })
+        .expect(200);
+
+      expect(res.body.access_token).toBeDefined();
+      expect(res.body.role).toBe('colaborador');
+      // reaproveitado nos testes seguintes — /auth/login é limitado (5/min)
+      colabAToken = res.body.access_token;
     });
 
     it('bloqueia rotas protegidas sem token', async () => {
@@ -425,6 +440,43 @@ describe('Permissionamento (RBAC) e2e', () => {
         .expect(200);
       // deptA tem exatamente Colab A + Colab Public (criado no describe anterior)
       expect(res.body.totalUsers).toBe(2);
+    });
+
+    it('Colaborador não acessa o painel agregado de staff (vê o próprio resultado via /users/me)', async () => {
+      await request(server)
+        .get('/analysis/dashboard')
+        .set('Authorization', `Bearer ${colabAToken}`)
+        .expect(403);
+    });
+  });
+
+  describe('GET /users/me — autoatendimento autenticado do próprio usuário', () => {
+    it('Colaborador vê o próprio resultado (mesmo formato do ResultScreen), sem gerar nova análise', async () => {
+      const res = await request(server)
+        .get('/users/me')
+        .set('Authorization', `Bearer ${colabAToken}`)
+        .expect(200);
+
+      expect(res.body.email).toBe(colabAEmail);
+      expect(res.body).toHaveProperty('analiseResult');
+    });
+
+    it('nunca expõe dados de outro usuário — cada token só vê o próprio registro', async () => {
+      const resAdmin = await request(server)
+        .get('/users/me')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(resAdmin.body.email).toBe(process.env.ADMIN_EMAIL);
+
+      const resColab = await request(server)
+        .get('/users/me')
+        .set('Authorization', `Bearer ${colabAToken}`)
+        .expect(200);
+      expect(resColab.body.email).toBe(colabAEmail);
+    });
+
+    it('bloqueia sem token', async () => {
+      await request(server).get('/users/me').expect(401);
     });
   });
 

@@ -14,6 +14,7 @@ interface AuthScreenProps {
   onVerifyAccess?: (e: React.FormEvent) => void;
   onCancelAccessCode?: () => void;
   accessError?: string;
+  onBack?: () => void;
 }
 
 export function AuthScreen({
@@ -27,6 +28,7 @@ export function AuthScreen({
   onVerifyAccess,
   onCancelAccessCode,
   accessError,
+  onBack,
 }: AuthScreenProps) {
   if (needsAccessCode) {
     return (
@@ -155,6 +157,16 @@ export function AuthScreen({
           <button type="submit" className="btn-auth">
             Iniciar Quiz →
           </button>
+          {onBack && (
+            <button
+              type="button"
+              className="btn-restart"
+              style={{ marginTop: '10px', width: '100%', background: 'var(--surface2)', color: 'var(--text)' }}
+              onClick={onBack}
+            >
+              ← Voltar
+            </button>
+          )}
         </form>
       </div>
     </motion.div>

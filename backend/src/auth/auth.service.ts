@@ -13,13 +13,20 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string) {
-    const user = await this.usersService.findByEmailWithPassword(email);
-
-    if (!user || user.role === UserRole.COLABORADOR || !user.password) {
+    const user = await this.usersService.findByEmailWithCredentials(email);
+    if (!user) {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
-    const passwordMatches = await bcrypt.compare(password, user.password);
+    // Staff usa senha; Colaborador usa o código de acesso gerado no cadastro
+    // (mesmo campo "password" do formulário, verificado contra outro hash).
+    const credentialHash =
+      user.role === UserRole.COLABORADOR ? user.accessCodeHash : user.password;
+    if (!credentialHash) {
+      throw new UnauthorizedException('Credenciais inválidas');
+    }
+
+    const passwordMatches = await bcrypt.compare(password, credentialHash);
     if (!passwordMatches) {
       throw new UnauthorizedException('Credenciais inválidas');
     }

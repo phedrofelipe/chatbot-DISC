@@ -85,7 +85,9 @@ export class UsersController {
 
   // Público: só confirma se o e-mail já está cadastrado e se o quiz foi concluído
   // (hasResult) — nunca expõe o resultado, que exige o código de acesso.
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  // Limite alto porque o tracker é por IP: colaboradores atrás do mesmo NAT
+  // da empresa compartilham essa cota ao iniciar o quiz em massa.
+  @Throttle({ default: { limit: 200, ttl: 60000 } })
   @Get('email/:email')
   async findByEmail(@Param('email') email: string) {
     const user = await this.usersService.findByEmail(email);
@@ -93,8 +95,11 @@ export class UsersController {
   }
 
   // Público: recupera o resultado já salvo mediante e-mail + código de acesso
-  // (mostrado uma única vez ao colaborador no cadastro/reset).
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  // (mostrado uma única vez ao colaborador no cadastro/reset). Código tem
+  // ~1,1 trilhão de combinações (8 chars, alfabeto de 32) — subir o limite
+  // não abre espaço real para força bruta, só evita que o NAT compartilhado
+  // da empresa derrube colaboradores legítimos.
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('verify-access')
   async verifyAccess(@Body() dto: VerifyAccessDto) {
@@ -102,6 +107,16 @@ export class UsersController {
       dto.email,
       dto.accessCode,
     );
+    return toPublicResult(user);
+  }
+
+  // Autoatendimento autenticado: o colaborador vê o próprio resultado já salvo
+  // (mesmo formato do ResultScreen) sem precisar do e-mail+código de novo,
+  // e sem disparar uma nova análise pela IA — só devolve o que já existe.
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async me(@Req() req: AuthenticatedRequest) {
+    const user = await this.usersService.findOne(req.user.userId);
     return toPublicResult(user);
   }
 

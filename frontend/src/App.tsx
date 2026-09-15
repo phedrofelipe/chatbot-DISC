@@ -292,6 +292,8 @@ function App() {
   const logout = () => {
     localStorage.removeItem('userEmail');
     localStorage.removeItem('userAccessCode');
+    localStorage.removeItem('staffSession');
+    setStaffSession(null);
     setUserData({ nomeCompleto: '', email: '', departmentId: '', idade: '', regiao: '' });
     setAnalysis(null);
     setNeedsAccessCode(false);
@@ -315,6 +317,33 @@ function App() {
       };
       setStaffSession(session);
       localStorage.setItem('staffSession', JSON.stringify(session));
+
+      if (session.role === 'colaborador') {
+        // Colaborador vê o próprio resultado (igual ao término do quiz), não o
+        // painel agregado de staff — e sem disparar nova análise pela IA.
+        const meRes = await api.get('/users/me', authHeaders(session.token));
+        applyUserSummary(meRes.data);
+        localStorage.setItem('userEmail', meRes.data.email);
+        localStorage.setItem('userAccessCode', staffCreds.pass);
+
+        if (meRes.data.analiseResult) {
+          setAnalysis(JSON.parse(meRes.data.analiseResult));
+          setScores({
+            D: meRes.data.scoreD ?? 0,
+            I: meRes.data.scoreI ?? 0,
+            S: meRes.data.scoreS ?? 0,
+            C: meRes.data.scoreC ?? 0,
+          });
+          setScreen('result');
+        } else {
+          setScreen('quiz');
+          setCurrentQ(0);
+          setScores({ D: 0, I: 0, S: 0, C: 0 });
+          setAnswers([]);
+        }
+        return;
+      }
+
       loadDashboard(session.token);
     } catch (error) {
       alert(getErrorMessage(error, 'Credenciais administrativas inválidas'));
@@ -436,6 +465,7 @@ function App() {
             onVerifyAccess={verifyAccess}
             onCancelAccessCode={cancelAccessCode}
             accessError={accessError}
+            onBack={() => setScreen('intro')}
           />
         )}
         {screen === 'access-code' && newAccessCode && (

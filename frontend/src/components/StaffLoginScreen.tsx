@@ -16,8 +16,11 @@ export function StaffLoginScreen({ creds, setCreds, onSubmit, onBack }: StaffLog
       exit={{ opacity: 0, scale: 0.95 }}
     >
       <div className="auth-card">
-        <h2>Acesso Administrativo</h2>
-        <p>Apenas para Administradores, Gestores e Líderes autorizados.</p>
+        <h2>Acessar Dashboard</h2>
+        <p>
+          Administradores, Gestores e Líderes entram com a senha cadastrada. Colaboradores entram
+          com o e-mail e o código de acesso recebidos no cadastro do quiz.
+        </p>
         <form onSubmit={onSubmit}>
           <div className="form-group">
             <label>E-mail</label>
@@ -29,7 +32,7 @@ export function StaffLoginScreen({ creds, setCreds, onSubmit, onBack }: StaffLog
             />
           </div>
           <div className="form-group">
-            <label>Senha</label>
+            <label>Senha ou código de acesso</label>
             <input
               type="password"
               required

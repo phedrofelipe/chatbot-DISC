@@ -199,7 +199,7 @@ Regras:
       const response = await axios.post<GroqChatCompletionResponse>(
         this.groqUrl,
         {
-          model: 'llama-3.3-70b-versatile',
+          model: 'openai/gpt-oss-120b',
           messages: [
             {
               role: 'system',
@@ -228,10 +228,26 @@ Regras:
         ) as DashboardAnalysisResult,
       };
     } catch (error) {
+      // A IA é um complemento aos números do dashboard, não um requisito —
+      // se a Groq falhar (fora do ar, modelo indisponível, etc.), ainda
+      // devolvemos a distribuição real dos colaboradores em vez de derrubar
+      // a tela inteira do dashboard.
       console.error('Erro na análise do dashboard:', error);
-      throw new InternalServerErrorException(
-        'Falha ao gerar análise do dashboard',
-      );
+      return {
+        totalUsers,
+        sectorDistribution,
+        discDistribution,
+        sectorData,
+        analysis: {
+          culture_summary:
+            'A análise de cultura por IA está temporariamente indisponível. Os números abaixo (distribuição DISC e por departamento) refletem os dados reais da equipe.',
+          leadership_focus: [],
+          strategic_advice: '',
+          potential_risks: '',
+          growth_opportunities: '',
+          attention_needed: [],
+        },
+      };
     }
   }
 
@@ -321,7 +337,7 @@ Regras obrigatórias:
       const response = await axios.post<GroqChatCompletionResponse>(
         this.groqUrl,
         {
-          model: 'llama-3.3-70b-versatile',
+          model: 'openai/gpt-oss-120b',
           messages: [
             {
               role: 'system',

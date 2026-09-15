@@ -95,7 +95,7 @@ export function ResultScreen({ analysis, scores, nomeCompleto, onDownloadPdf, on
 
       <div className="profile-section">
         <h3>
-          <span className="icon tips-icon">🎯</span> Dicas para o gestor
+          <span className="icon tips-icon">🎯</span> Dicas de rotina
         </h3>
         <ul>
           {analysis.management_tips.map((t, i) => (

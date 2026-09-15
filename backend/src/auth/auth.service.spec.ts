@@ -12,7 +12,7 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     usersService = {
-      findByEmailWithPassword: jest.fn(),
+      findByEmailWithCredentials: jest.fn(),
     };
     jwtService = {
       sign: jest.fn().mockReturnValue('signed-token'),
@@ -24,18 +24,21 @@ describe('AuthService', () => {
   });
 
   it('rejeita login para e-mail inexistente', async () => {
-    (usersService.findByEmailWithPassword as jest.Mock).mockResolvedValue(null);
+    (usersService.findByEmailWithCredentials as jest.Mock).mockResolvedValue(
+      null,
+    );
     await expect(
       authService.login('nao-existe@teste.com', 'qualquer'),
     ).rejects.toThrow(UnauthorizedException);
   });
 
-  it('rejeita login de um Colaborador (sem senha/login)', async () => {
-    (usersService.findByEmailWithPassword as jest.Mock).mockResolvedValue({
+  it('rejeita login de Colaborador sem código de acesso cadastrado', async () => {
+    (usersService.findByEmailWithCredentials as jest.Mock).mockResolvedValue({
       id: 1,
       email: 'colaborador@teste.com',
       role: UserRole.COLABORADOR,
       password: null,
+      accessCodeHash: null,
       departmentId: null,
     });
     await expect(
@@ -43,9 +46,53 @@ describe('AuthService', () => {
     ).rejects.toThrow(UnauthorizedException);
   });
 
+  it('rejeita código de acesso incorreto para Colaborador', async () => {
+    const hashed = await bcrypt.hash('COD1-GO23', 10);
+    (usersService.findByEmailWithCredentials as jest.Mock).mockResolvedValue({
+      id: 1,
+      email: 'colaborador@teste.com',
+      role: UserRole.COLABORADOR,
+      password: null,
+      accessCodeHash: hashed,
+      departmentId: null,
+    });
+    await expect(
+      authService.login('colaborador@teste.com', 'codigo-errado'),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('autentica Colaborador com o código de acesso correto', async () => {
+    const hashed = await bcrypt.hash('COD1-GO23', 10);
+    (usersService.findByEmailWithCredentials as jest.Mock).mockResolvedValue({
+      id: 9,
+      email: 'colaborador@teste.com',
+      nomeCompleto: 'Colaborador Teste',
+      role: UserRole.COLABORADOR,
+      password: null,
+      accessCodeHash: hashed,
+      departmentId: 3,
+    });
+
+    const result = await authService.login(
+      'colaborador@teste.com',
+      'COD1-GO23',
+    );
+
+    expect(result.access_token).toBe('signed-token');
+    expect(result.role).toBe(UserRole.COLABORADOR);
+    expect(jwtService.sign).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sub: 9,
+        email: 'colaborador@teste.com',
+        role: UserRole.COLABORADOR,
+        departmentId: 3,
+      }),
+    );
+  });
+
   it('rejeita senha incorreta', async () => {
     const hashed = await bcrypt.hash('senha-correta', 10);
-    (usersService.findByEmailWithPassword as jest.Mock).mockResolvedValue({
+    (usersService.findByEmailWithCredentials as jest.Mock).mockResolvedValue({
       id: 1,
       email: 'admin@teste.com',
       role: UserRole.ADMIN,
@@ -59,7 +106,7 @@ describe('AuthService', () => {
 
   it('autentica com sucesso e retorna token + papel', async () => {
     const hashed = await bcrypt.hash('senha-correta', 10);
-    (usersService.findByEmailWithPassword as jest.Mock).mockResolvedValue({
+    (usersService.findByEmailWithCredentials as jest.Mock).mockResolvedValue({
       id: 1,
       email: 'admin@teste.com',
       nomeCompleto: 'Admin',

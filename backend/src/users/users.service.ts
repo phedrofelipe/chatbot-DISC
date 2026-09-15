@@ -153,10 +153,13 @@ export class UsersService {
     return user;
   }
 
-  async findByEmailWithPassword(email: string): Promise<User | null> {
+  // Usado só pelo login: Staff autentica com password, Colaborador com o
+  // código de acesso (accessCodeHash) — por isso seleciona os dois hashes.
+  async findByEmailWithCredentials(email: string): Promise<User | null> {
     return this.usersRepository
       .createQueryBuilder('user')
       .addSelect('user.password')
+      .addSelect('user.accessCodeHash')
       .where('user.email = :email', { email })
       .getOne();
   }
